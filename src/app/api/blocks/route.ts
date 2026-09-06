@@ -1,0 +1,33 @@
+import { NextResponse } from "next/server";
+import { db } from "@/db";
+import { blockItems, events, segments } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { trafficFactor } from "@/lib/engine/network";
+
+export const dynamic = "force-dynamic";
+
+/** Drag-to-resize a planned block; recomputes its delay cost and returns fresh figures. */
+export async function PATCH(req: Request) {
+  try {
+    const body = (await req.json()) as { id?: number; startMin?: number; endMin?: number };
+    const id = Number(body.id);
+    const startMin = Math.max(0, Math.min(1410, Math.round(Number(body.startMin))));
+    const endMin = Math.max(startMin + 15, Math.min(1440, Math.round(Number(body.endMin))));
+    const [b] = await db.select().from(blockItems).where(eq(blockItems.id, id));
+    if (!b) return NextResponse.json({ error: "block not found" }, { status: 404 });
+    const [seg] = await db.select().from(segments).where(eq(segments.id, b.segmentId));
+
+    const durationH = (endMin - startMin) / 60;
+    const tf = trafficFactor((startMin + endMin) / 2);
+    const estAffected = Math.max(1, seg.dailyTrains * (durationH / 16) * (0.3 + tf) * (0.5 + tf * 0.2));
+    const delayCostMin = Math.round(estAffected * (2.5 + tf * 42) * 10) / 10;
+    await db.update(blockItems).set({ startMin, endMin, delayCostMin }).where(eq(blockItems.id, id));
+    await db.insert(events).values({
+      kind: "info",
+      message: `Control Room resized block #${id} (${seg.code}) to ${String(Math.floor(startMin / 60)).padStart(2, "0")}:${String(startMin % 60).padStart(2, "0")}–${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")} — cascade delay recalculated: ${Math.round(estAffected)} trains, ${Math.round(delayCostMin)} min`,
+    });
+    return NextResponse.json({ ok: true, startMin, endMin, delayCostMin, affected: Math.round(estAffected) });
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
+}

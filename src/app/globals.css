@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: var(--font-space), "Space Grotesk", system-ui, sans-serif;
+  --font-mono: var(--font-jb), "JetBrains Mono", ui-monospace, monospace;
+
+  --color-abyss: #05080e;
+  --color-hull: #070c15;
+  --color-panel: #0a101c;
+  --color-edge: #1b2436;
+  --color-ink: #e8eef7;
+  --color-dim: #93a1b8;
+  --color-faint: #59687f;
+  --color-amber: #f5a524;
+  --color-saffron: #ff9933;
+  --color-signal: #ff4d4f;
+  --color-mint: #34d399;
+  --color-cyan: #22d3ee;
+  --color-violet: #a78bfa;
+}
+
+html {
+  background: var(--color-abyss);
+  scrollbar-color: #223148 #05080e;
+}
+
+body {
+  background:
+    radial-gradient(1000px 500px at 85% -10%, rgba(245, 165, 36, 0.035), transparent 60%),
+    var(--color-abyss);
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: rgba(245, 165, 36, 0.3); }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #223148; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #2d3f5d; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- national hairline ---------- */
+.tricolor {
+  height: 3px;
+  background: linear-gradient(90deg, #ff9933 0 33.4%, #f0f4f8 33.4% 66.7%, #138808 66.7% 100%);
+}
+
+/* ---------- panels — flat, crisp, console-grade ---------- */
+.panel {
+  background: #0a101c;
+  border: 1px solid #1b2436;
+  border-radius: 10px;
+}
+.panel-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 14px;
+  border-bottom: 1px solid #161e2e;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-dim);
+}
+
+/* numbered editorial section label */
+.sec-num {
+  font-family: var(--font-mono);
+  color: var(--color-faint);
+  margin-right: 8px;
+}
+
+.gridlines {
+  background-image:
+    linear-gradient(rgba(120, 145, 190, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(120, 145, 190, 0.04) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+/* ---------- keyframes (restrained) ---------- */
+@keyframes dashflow { to { stroke-dashoffset: -120; } }
+@keyframes pulseRing {
+  0% { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+@keyframes blinkdot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes fogdrift {
+  0% { transform: translateX(-5%); }
+  50% { transform: translateX(5%); }
+  100% { transform: translateX(-5%); }
+}
+@keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+@keyframes spinSlow { to { transform: rotate(360deg); } }
+
+.anim-flow { animation: dashflow 4s linear infinite; }
+.anim-blink { animation: blinkdot 1.8s ease-in-out infinite; }
+.anim-fog { animation: fogdrift 16s ease-in-out infinite; }
+.anim-rise { animation: riseIn 0.45s cubic-bezier(0.2, 0.9, 0.25, 1) both; }
+.anim-spin-slow { animation: spinSlow 14s linear infinite; }
+
+.marquee-track { display: flex; width: max-content; animation: marquee 55s linear infinite; }
+
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.07) 50%, rgba(255,255,255,0.03) 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+
+.text-glow-amber { text-shadow: 0 0 26px rgba(245, 165, 36, 0.35); }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* consistent interaction feel — 120ms, no bounce */
+* { transition-property: none; }
+button, a, select, input, [role="button"] { transition-duration: 120ms; }
+button:active:not(:disabled) { transform: translateY(0.5px); }
+button:disabled { cursor: not-allowed; }
+
+:focus-visible {
+  outline: 2px solid rgba(245, 165, 36, 0.5);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

@@ -1,0 +1,190 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { fmtMin, CORRIDOR_COLORS } from "@/lib/engine/network";
+import type { BlockItemDTO } from "@/lib/engine/types";
+
+const DEPT_FILL: Record<string, string> = { ENG: "#f5a524", TRD: "#38bdf8", SNT: "#a78bfa" };
+const DAY_NAMES = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+
+interface Props {
+  blocks: BlockItemDTO[];
+  week: number;
+  selectedId?: number | null;
+  onSelect?: (id: number) => void;
+  /** Enables drag-to-resize handles on every block (Control Room mode). */
+  onResize?: (id: number, startMin: number, endMin: number) => void;
+}
+
+const W = 1040;
+const LABEL = 92;
+const TOP = 46;
+const ROW_H = 34;
+const PLOT_W = W - LABEL - 16;
+const MIN_PER_PX = (1440 * 7) / PLOT_W;
+
+export default function GanttChart({ blocks, week, selectedId, onSelect, onResize }: Props) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const dragRef = useRef<{ id: number; edge: "l" | "r"; startX: number; oStart: number; oEnd: number } | null>(null);
+  const [drag, setDrag] = useState<{ id: number; startMin: number; endMin: number } | null>(null);
+
+  const daysOffset = week * 7;
+  const visible = blocks.filter((b) => b.day >= daysOffset && b.day < daysOffset + 7);
+  const rows = [...new Map(visible.map((b) => [b.segmentCode, b])).keys()];
+  const x = useCallback(
+    (day: number, min: number) => LABEL + (((day - daysOffset) * 1440 + min) / (1440 * 7)) * PLOT_W,
+    [daysOffset]
+  );
+
+  function beginDrag(e: React.PointerEvent, b: BlockItemDTO, edge: "l" | "r") {
+    if (!onResize) return;
+    e.stopPropagation();
+    e.preventDefault();
+    dragRef.current = { id: b.id, edge, startX: e.clientX, oStart: b.startMin, oEnd: b.endMin };
+    setDrag({ id: b.id, startMin: b.startMin, endMin: b.endMin });
+  }
+
+  useEffect(() => {
+    if (!drag) return;
+    const scale = () => (svgRef.current ? W / svgRef.current.getBoundingClientRect().width : 1);
+    const move = (e: PointerEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      const dMin = Math.round(((e.clientX - d.startX) * scale() * MIN_PER_PX) / 5) * 5;
+      if (d.edge === "l") {
+        const ns = Math.max(0, Math.min(d.oEnd - 15, d.oStart + dMin));
+        setDrag({ id: d.id, startMin: ns, endMin: d.oEnd });
+      } else {
+        const ne = Math.min(1440, Math.max(d.oStart + 15, d.oEnd + dMin));
+        setDrag({ id: d.id, startMin: d.oStart, endMin: ne });
+      }
+    };
+    const up = () => {
+      const d = dragRef.current;
+      const cur = drag;
+      dragRef.current = null;
+      setDrag(null);
+      if (d && cur && (cur.startMin !== d.oStart || cur.endMin !== d.oEnd)) {
+        onResize?.(d.id, cur.startMin, cur.endMin);
+      }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+  }, [drag, onResize]);
+
+  const H = TOP + rows.length * ROW_H + 26;
+
+  return (
+    <svg
+      ref={svgRef}
+      viewBox={`0 0 ${W} ${Math.max(H, 110)}`}
+      className="h-auto w-full select-none"
+      role="img"
+      aria-label={`Weekly block schedule Gantt chart — ${visible.length} planned maintenance blocks; drag block edges to resize`}
+    >
+      <defs>
+        <linearGradient id="supGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="#f5a524" />
+          <stop offset="50%" stopColor="#38bdf8" />
+          <stop offset="100%" stopColor="#a78bfa" />
+        </linearGradient>
+      </defs>
+
+      {Array.from({ length: 8 }).map((_, i) => (
+        <g key={i}>
+          <line x1={LABEL + (i / 7) * PLOT_W} y1={TOP - 8} x2={LABEL + (i / 7) * PLOT_W} y2={Math.max(H, 110) - 18} stroke="#141d2f" strokeWidth="1" />
+          {i < 7 && (
+            <text x={LABEL + ((i + 0.5) / 7) * PLOT_W} y={TOP - 14} textAnchor="middle" fontSize="10" fill="#63748f" fontFamily="var(--font-jb)" letterSpacing="2">
+              {DAY_NAMES[i]} D{daysOffset + i + 1}
+            </text>
+          )}
+        </g>
+      ))}
+      {Array.from({ length: 7 }).map((_, d) => (
+        <rect
+          key={"g" + d}
+          x={x(daysOffset + d, 30)}
+          y={TOP - 6}
+          width={((270 - 30) / (1440 * 7)) * PLOT_W}
+          height={Math.max(H, 110) - TOP - 14}
+          fill="rgba(245,165,36,0.05)"
+          rx="3"
+        />
+      ))}
+
+      {rows.length === 0 && (
+        <text x={W / 2} y={80} textAnchor="middle" fontSize="13" fill="#4a576d" fontFamily="var(--font-jb)">
+          NO BLOCKS THIS WEEK — RUN THE AI OPTIMIZER
+        </text>
+      )}
+
+      {rows.map((code, ri) => {
+        const rowBlocks = visible.filter((b) => b.segmentCode === code);
+        const corridor = rowBlocks[0]?.corridor ?? "";
+        return (
+          <g key={code}>
+            <text x={LABEL - 10} y={TOP + ri * ROW_H + 18} textAnchor="end" fontSize="10.5" fontWeight="600" fill={CORRIDOR_COLORS[corridor] ?? "#8b98ad"} fontFamily="var(--font-jb)">
+              {code.replace("XR:", "")}
+            </text>
+            <line x1={LABEL} y1={TOP + ri * ROW_H + 13} x2={W - 16} y2={TOP + ri * ROW_H + 13} stroke="#101827" strokeWidth="1" />
+            {rowBlocks.map((b) => {
+              const dragging = drag?.id === b.id;
+              const sMin = dragging ? drag.startMin : b.startMin;
+              const eMin = dragging ? drag.endMin : b.endMin;
+              const bx = x(b.day, sMin);
+              const bw = Math.max(6, x(b.day, eMin) - bx);
+              const selected = selectedId === b.id;
+              return (
+                <g key={b.id} style={{ cursor: "pointer" }}>
+                  {selected && !dragging && <rect x={bx - 3} y={TOP + ri * ROW_H + 1} width={bw + 6} height={ROW_H - 8} rx="6" fill="none" stroke="#e8eef7" strokeWidth="1" strokeDasharray="3 3" />}
+                  <rect
+                    x={bx}
+                    y={TOP + ri * ROW_H + 4}
+                    width={bw}
+                    height={ROW_H - 14}
+                    rx="5"
+                    fill={b.isSuperBlock ? "url(#supGrad)" : (DEPT_FILL[b.departments[0]] ?? "#64748b")}
+                    opacity={dragging ? 0.55 : b.mode === "virtual" ? 0.45 : 0.92}
+                    stroke={selected || dragging ? "#fff" : "rgba(4,6,12,0.6)"}
+                    strokeWidth={dragging ? 1.6 : 1}
+                    strokeDasharray={dragging ? "4 3" : undefined}
+                    onClick={() => !dragging && onSelect?.(b.id)}
+                  />
+                  {bw > 44 && (
+                    <text x={bx + 6} y={TOP + ri * ROW_H + 17} fontSize="8.5" fill="#04060c" fontWeight="700" fontFamily="var(--font-jb)" pointerEvents="none">
+                      {b.isSuperBlock ? "SUPER" : b.departments[0]} {fmtMin(sMin)}–{fmtMin(eMin)}
+                    </text>
+                  )}
+                  {dragging && (
+                    <text x={bx + bw / 2} y={TOP + ri * ROW_H - 4} textAnchor="middle" fontSize="9.5" fill="#f5a524" fontWeight="700" fontFamily="var(--font-jb)">
+                      {fmtMin(sMin)}–{fmtMin(eMin)} · {Math.round((eMin - sMin) / 6) / 10}h
+                    </text>
+                  )}
+                  {onResize && !dragging && (
+                    <>
+                      <rect x={bx - 2} y={TOP + ri * ROW_H + 4} width="7" height={ROW_H - 14} rx="3" fill="#e8eef7" opacity="0.55" style={{ cursor: "ew-resize" }} onPointerDown={(e) => beginDrag(e, b, "l")} />
+                      <rect x={bx + bw - 5} y={TOP + ri * ROW_H + 4} width="7" height={ROW_H - 14} rx="3" fill="#e8eef7" opacity="0.55" style={{ cursor: "ew-resize" }} onPointerDown={(e) => beginDrag(e, b, "r")} />
+                    </>
+                  )}
+                  <title>
+                    {`${b.segmentCode} · ${fmtMin(b.startMin)}–${fmtMin(b.endMin)} · ${b.departments.join("+")} · ${b.defectCount} tasks`}
+                  </title>
+                </g>
+              );
+            })}
+          </g>
+        );
+      })}
+
+      <text x={LABEL} y={Math.max(H, 110) - 4} fontSize="8.5" fill="#4a576d" fontFamily="var(--font-jb)" letterSpacing="1.5">
+        {onResize
+          ? "DRAG BLOCK EDGES TO RESIZE · delay cost recalculates on release · click block for safety order"
+          : "AMBER BAND = GOLDEN MAINTENANCE WINDOW 00:30–04:30 · CLICK A BLOCK TO GENERATE ITS SAFETY WORK ORDER"}
+      </text>
+    </svg>
+  );
+}
