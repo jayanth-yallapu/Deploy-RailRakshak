@@ -4,22 +4,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fmtMin, CORRIDOR_COLORS } from "@/lib/engine/network";
 import type { BlockItemDTO } from "@/lib/engine/types";
 
-const DEPT_FILL: Record<string, string> = { ENG: "#f5a524", TRD: "#38bdf8", SNT: "#a78bfa" };
-const DAY_NAMES = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+const DEPT_FILL: Record<string, string> = { ENG: "#f59e0b", TRD: "#0ea5e9", SNT: "#8b5cf6" };
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 interface Props {
   blocks: BlockItemDTO[];
   week: number;
   selectedId?: number | null;
   onSelect?: (id: number) => void;
-  /** Enables drag-to-resize handles on every block (Control Room mode). */
   onResize?: (id: number, startMin: number, endMin: number) => void;
 }
 
 const W = 1040;
-const LABEL = 92;
+const LABEL = 96;
 const TOP = 46;
-const ROW_H = 34;
+const ROW_H = 36;
 const PLOT_W = W - LABEL - 16;
 const MIN_PER_PX = (1440 * 7) / PLOT_W;
 
@@ -81,44 +80,62 @@ export default function GanttChart({ blocks, week, selectedId, onSelect, onResiz
   return (
     <svg
       ref={svgRef}
-      viewBox={`0 0 ${W} ${Math.max(H, 110)}`}
+      viewBox={`0 0 ${W} ${Math.max(H, 120)}`}
       className="h-auto w-full select-none"
       role="img"
-      aria-label={`Weekly block schedule Gantt chart — ${visible.length} planned maintenance blocks; drag block edges to resize`}
+      aria-label={`Gantt schedule with ${visible.length} maintenance blocks`}
     >
       <defs>
         <linearGradient id="supGrad" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#f5a524" />
-          <stop offset="50%" stopColor="#38bdf8" />
-          <stop offset="100%" stopColor="#a78bfa" />
+          <stop offset="0%" stopColor="#f59e0b" />
+          <stop offset="50%" stopColor="#0ea5e9" />
+          <stop offset="100%" stopColor="#8b5cf6" />
         </linearGradient>
       </defs>
 
+      {/* Grid Lines & Day Dividers */}
       {Array.from({ length: 8 }).map((_, i) => (
         <g key={i}>
-          <line x1={LABEL + (i / 7) * PLOT_W} y1={TOP - 8} x2={LABEL + (i / 7) * PLOT_W} y2={Math.max(H, 110) - 18} stroke="#141d2f" strokeWidth="1" />
+          <line
+            x1={LABEL + (i / 7) * PLOT_W}
+            y1={TOP - 10}
+            x2={LABEL + (i / 7) * PLOT_W}
+            y2={Math.max(H, 120) - 18}
+            stroke="#1e293b"
+            strokeWidth="1"
+          />
           {i < 7 && (
-            <text x={LABEL + ((i + 0.5) / 7) * PLOT_W} y={TOP - 14} textAnchor="middle" fontSize="10" fill="#63748f" fontFamily="var(--font-jb)" letterSpacing="2">
-              {DAY_NAMES[i]} D{daysOffset + i + 1}
+            <text
+              x={LABEL + ((i + 0.5) / 7) * PLOT_W}
+              y={TOP - 16}
+              textAnchor="middle"
+              fontSize="11"
+              fontWeight="600"
+              fill="#94a3b8"
+              fontFamily="var(--font-display)"
+            >
+              {DAY_NAMES[i]} (Day {daysOffset + i + 1})
             </text>
           )}
         </g>
       ))}
+
+      {/* Golden Window Background Band (00:30–04:30) */}
       {Array.from({ length: 7 }).map((_, d) => (
         <rect
           key={"g" + d}
           x={x(daysOffset + d, 30)}
-          y={TOP - 6}
+          y={TOP - 8}
           width={((270 - 30) / (1440 * 7)) * PLOT_W}
-          height={Math.max(H, 110) - TOP - 14}
-          fill="rgba(245,165,36,0.05)"
-          rx="3"
+          height={Math.max(H, 120) - TOP - 10}
+          fill="rgba(245, 158, 11, 0.04)"
+          rx="4"
         />
       ))}
 
       {rows.length === 0 && (
-        <text x={W / 2} y={80} textAnchor="middle" fontSize="13" fill="#4a576d" fontFamily="var(--font-jb)">
-          NO BLOCKS THIS WEEK — RUN THE AI OPTIMIZER
+        <text x={W / 2} y={80} textAnchor="middle" fontSize="13" fill="#64748b" fontFamily="var(--font-display)">
+          No scheduled blocks this week. Run the optimizer to generate a plan.
         </text>
       )}
 
@@ -127,47 +144,109 @@ export default function GanttChart({ blocks, week, selectedId, onSelect, onResiz
         const corridor = rowBlocks[0]?.corridor ?? "";
         return (
           <g key={code}>
-            <text x={LABEL - 10} y={TOP + ri * ROW_H + 18} textAnchor="end" fontSize="10.5" fontWeight="600" fill={CORRIDOR_COLORS[corridor] ?? "#8b98ad"} fontFamily="var(--font-jb)">
+            <text
+              x={LABEL - 12}
+              y={TOP + ri * ROW_H + 20}
+              textAnchor="end"
+              fontSize="11"
+              fontWeight="600"
+              fill={CORRIDOR_COLORS[corridor] ?? "#94a3b8"}
+              fontFamily="var(--font-mono)"
+            >
               {code.replace("XR:", "")}
             </text>
-            <line x1={LABEL} y1={TOP + ri * ROW_H + 13} x2={W - 16} y2={TOP + ri * ROW_H + 13} stroke="#101827" strokeWidth="1" />
+            <line
+              x1={LABEL}
+              y1={TOP + ri * ROW_H + 14}
+              x2={W - 16}
+              y2={TOP + ri * ROW_H + 14}
+              stroke="#172033"
+              strokeWidth="1"
+            />
             {rowBlocks.map((b) => {
               const dragging = drag?.id === b.id;
               const sMin = dragging ? drag.startMin : b.startMin;
               const eMin = dragging ? drag.endMin : b.endMin;
               const bx = x(b.day, sMin);
-              const bw = Math.max(6, x(b.day, eMin) - bx);
+              const bw = Math.max(8, x(b.day, eMin) - bx);
               const selected = selectedId === b.id;
               return (
                 <g key={b.id} style={{ cursor: "pointer" }}>
-                  {selected && !dragging && <rect x={bx - 3} y={TOP + ri * ROW_H + 1} width={bw + 6} height={ROW_H - 8} rx="6" fill="none" stroke="#e8eef7" strokeWidth="1" strokeDasharray="3 3" />}
+                  {selected && !dragging && (
+                    <rect
+                      x={bx - 3}
+                      y={TOP + ri * ROW_H + 2}
+                      width={bw + 6}
+                      height={ROW_H - 8}
+                      rx="7"
+                      fill="none"
+                      stroke="#f1f5f9"
+                      strokeWidth="1.5"
+                      strokeDasharray="3 3"
+                    />
+                  )}
                   <rect
                     x={bx}
-                    y={TOP + ri * ROW_H + 4}
+                    y={TOP + ri * ROW_H + 5}
                     width={bw}
                     height={ROW_H - 14}
-                    rx="5"
+                    rx="6"
                     fill={b.isSuperBlock ? "url(#supGrad)" : (DEPT_FILL[b.departments[0]] ?? "#64748b")}
-                    opacity={dragging ? 0.55 : b.mode === "virtual" ? 0.45 : 0.92}
-                    stroke={selected || dragging ? "#fff" : "rgba(4,6,12,0.6)"}
-                    strokeWidth={dragging ? 1.6 : 1}
-                    strokeDasharray={dragging ? "4 3" : undefined}
+                    opacity={dragging ? 0.6 : b.mode === "virtual" ? 0.5 : 0.95}
+                    stroke={selected || dragging ? "#fff" : "rgba(10, 14, 23, 0.8)"}
+                    strokeWidth={dragging ? 1.5 : 1}
                     onClick={() => !dragging && onSelect?.(b.id)}
                   />
-                  {bw > 44 && (
-                    <text x={bx + 6} y={TOP + ri * ROW_H + 17} fontSize="8.5" fill="#04060c" fontWeight="700" fontFamily="var(--font-jb)" pointerEvents="none">
+                  {bw > 50 && (
+                    <text
+                      x={bx + 6}
+                      y={TOP + ri * ROW_H + 18}
+                      fontSize="9.5"
+                      fill="#0a0e17"
+                      fontWeight="700"
+                      fontFamily="var(--font-display)"
+                      pointerEvents="none"
+                    >
                       {b.isSuperBlock ? "SUPER" : b.departments[0]} {fmtMin(sMin)}–{fmtMin(eMin)}
                     </text>
                   )}
                   {dragging && (
-                    <text x={bx + bw / 2} y={TOP + ri * ROW_H - 4} textAnchor="middle" fontSize="9.5" fill="#f5a524" fontWeight="700" fontFamily="var(--font-jb)">
-                      {fmtMin(sMin)}–{fmtMin(eMin)} · {Math.round((eMin - sMin) / 6) / 10}h
+                    <text
+                      x={bx + bw / 2}
+                      y={TOP + ri * ROW_H - 3}
+                      textAnchor="middle"
+                      fontSize="10"
+                      fill="#f59e0b"
+                      fontWeight="700"
+                      fontFamily="var(--font-mono)"
+                    >
+                      {fmtMin(sMin)}–{fmtMin(eMin)} ({(eMin - sMin) / 60}h)
                     </text>
                   )}
                   {onResize && !dragging && (
                     <>
-                      <rect x={bx - 2} y={TOP + ri * ROW_H + 4} width="7" height={ROW_H - 14} rx="3" fill="#e8eef7" opacity="0.55" style={{ cursor: "ew-resize" }} onPointerDown={(e) => beginDrag(e, b, "l")} />
-                      <rect x={bx + bw - 5} y={TOP + ri * ROW_H + 4} width="7" height={ROW_H - 14} rx="3" fill="#e8eef7" opacity="0.55" style={{ cursor: "ew-resize" }} onPointerDown={(e) => beginDrag(e, b, "r")} />
+                      <rect
+                        x={bx - 2}
+                        y={TOP + ri * ROW_H + 5}
+                        width="7"
+                        height={ROW_H - 14}
+                        rx="3"
+                        fill="#f1f5f9"
+                        opacity="0.6"
+                        style={{ cursor: "ew-resize" }}
+                        onPointerDown={(e) => beginDrag(e, b, "l")}
+                      />
+                      <rect
+                        x={bx + bw - 5}
+                        y={TOP + ri * ROW_H + 5}
+                        width="7"
+                        height={ROW_H - 14}
+                        rx="3"
+                        fill="#f1f5f9"
+                        opacity="0.6"
+                        style={{ cursor: "ew-resize" }}
+                        onPointerDown={(e) => beginDrag(e, b, "r")}
+                      />
                     </>
                   )}
                   <title>
@@ -180,10 +259,10 @@ export default function GanttChart({ blocks, week, selectedId, onSelect, onResiz
         );
       })}
 
-      <text x={LABEL} y={Math.max(H, 110) - 4} fontSize="8.5" fill="#4a576d" fontFamily="var(--font-jb)" letterSpacing="1.5">
+      <text x={LABEL} y={Math.max(H, 120) - 4} fontSize="9.5" fill="#64748b" fontFamily="var(--font-display)">
         {onResize
-          ? "DRAG BLOCK EDGES TO RESIZE · delay cost recalculates on release · click block for safety order"
-          : "AMBER BAND = GOLDEN MAINTENANCE WINDOW 00:30–04:30 · CLICK A BLOCK TO GENERATE ITS SAFETY WORK ORDER"}
+          ? "Drag block handles to resize window · delay impact recalculates instantly · click a block to view its safety order"
+          : "Golden maintenance window 00:30–04:30 · click any block to view its generated safety work order"}
       </text>
     </svg>
   );

@@ -1,0 +1,331 @@
+/* ─── Hindi / English Translation Dictionary ─── */
+
+export type Lang = "en" | "hi";
+
+const dict: Record<string, { en: string; hi: string }> = {
+  /* ─── Common / Global ─── */
+  "app.name": { en: "RAIL RAKSHAK", hi: "रेल रक्षक" },
+  "app.tagline": { en: "AI Block Planning · Ministry of Railways", hi: "AI ब्लॉक प्लानिंग · रेल मंत्रालय" },
+  "app.division": { en: "NR · Delhi Division", hi: "उ.रे. · दिल्ली मंडल" },
+  "app.northern": { en: "Northern Railway", hi: "उत्तर रेलवे" },
+  "app.footer": { en: "RAIL RAKSHAK · Indian Railways Block Planning System", hi: "रेल रक्षक · भारतीय रेलवे ब्लॉक प्लानिंग प्रणाली" },
+  "app.footer.node": { en: "RAIL RAKSHAK · Indian Railways Block Planning System · Node NR-DELHI-03", hi: "रेल रक्षक · भारतीय रेलवे ब्लॉक प्लानिंग · नोड NR-DELHI-03" },
+  "app.footer.sih": { en: "Smart India Hackathon 2026 · PS #26027 · Ministry of Railways", hi: "स्मार्ट इंडिया हैकथॉन 2026 · PS #26027 · रेल मंत्रालय" },
+  "system.ready": { en: "System Ready", hi: "सिस्टम तैयार" },
+  "grid.live": { en: "Delhi Division Grid Live", hi: "दिल्ली मंडल ग्रिड लाइव" },
+
+  /* ─── Navigation ─── */
+  "nav.command": { en: "Command Center", hi: "कमांड सेंटर" },
+  "nav.command.hint": { en: "Live grid · Train tracking", hi: "लाइव ग्रिड · ट्रेन ट्रैकिंग" },
+  "nav.planner": { en: "Block Planner", hi: "ब्लॉक प्लानर" },
+  "nav.planner.hint": { en: "Schedule & optimize", hi: "शेड्यूल और ऑप्टिमाइज़" },
+  "nav.simulation": { en: "Testing Lab", hi: "टेस्टिंग लैब" },
+  "nav.simulation.hint": { en: "What-if & crisis tests", hi: "क्या-अगर और आपातकालीन परीक्षण" },
+  "nav.field": { en: "Field Work", hi: "फ़ील्ड कार्य" },
+  "nav.field.hint": { en: "Check & verify blocks", hi: "ब्लॉक जांच और सत्यापन" },
+  "nav.jobs": { en: "My Job Portal", hi: "मेरा जॉब पोर्टल" },
+  "nav.jobs.hint": { en: "Work permits & GPS proof", hi: "वर्क परमिट और GPS प्रमाण" },
+  "nav.overview": { en: "Project Overview", hi: "प्रोजेक्ट अवलोकन" },
+  "nav.overview.hint": { en: "About & Docs", hi: "जानकारी और दस्तावेज़" },
+  "nav.operations": { en: "Operations", hi: "संचालन" },
+  "nav.system": { en: "System", hi: "सिस्टम" },
+
+  /* ─── Roles ─── */
+  "role.drm": { en: "DRM / Admin", hi: "DRM / प्रशासक" },
+  "role.control": { en: "Control Room / COA", hi: "कंट्रोल रूम / COA" },
+  "role.inspector": { en: "Section Inspector", hi: "सेक्शन इंस्पेक्टर" },
+  "role.karmi": { en: "Maintenance Worker", hi: "रखरखाव कर्मी" },
+  "role.active": { en: "ACTIVE ROLE", hi: "सक्रिय भूमिका" },
+  "role.switch": { en: "Switch role", hi: "भूमिका बदलें" },
+  "role.drm.badge": { en: "DRM — Can Override AI", hi: "DRM — AI ओवरराइड कर सकते हैं" },
+  "role.control.badge": { en: "Control Room — Live Operations", hi: "कंट्रोल रूम — लाइव संचालन" },
+  "role.inspector.badge": { en: "Inspector — Field Supervisor", hi: "इंस्पेक्टर — फ़ील्ड सुपरवाइज़र" },
+  "role.karmi.badge": { en: "Worker — Field Crew", hi: "कर्मी — फ़ील्ड क्रू" },
+
+  /* ─── Role cards (login page) ─── */
+  "role.drm.line": { en: "Railway Manager Desk", hi: "रेलवे प्रबंधक डेस्क" },
+  "role.drm.desc": { en: "Dashboard with key numbers, schedule approvals, and the power to override AI decisions.", hi: "मुख्य आंकड़ों का डैशबोर्ड, शेड्यूल मंजूरी, और AI के फैसलों को बदलने का अधिकार।" },
+  "role.control.line": { en: "Section Controller / COA Desk", hi: "सेक्शन कंट्रोलर / COA डेस्क" },
+  "role.control.desc": { en: "Live train tracking board, what-if testing, and block release control.", hi: "लाइव ट्रेन ट्रैकिंग बोर्ड, क्या-अगर परीक्षण, और ब्लॉक रिलीज़ कंट्रोल।" },
+  "role.inspector.line": { en: "Senior Section Engineer", hi: "वरिष्ठ सेक्शन इंजीनियर" },
+  "role.inspector.desc": { en: "Field checking, crew assignment, GPS photo checking, and digital sign-off.", hi: "फ़ील्ड जांच, क्रू असाइनमेंट, GPS फोटो जांच, और डिजिटल साइन-ऑफ।" },
+  "role.karmi.line": { en: "Field Worker Portal", hi: "फ़ील्ड कर्मी पोर्टल" },
+  "role.karmi.desc": { en: "Active work permits, safety checklists, and GPS before/after photo upload.", hi: "सक्रिय वर्क परमिट, सुरक्षा चेकलिस्ट, और GPS पहले/बाद फोटो अपलोड।" },
+
+  /* ─── Buttons ─── */
+  "btn.signin": { en: "Sign In", hi: "साइन इन" },
+  "btn.signin.desks": { en: "Sign In to Desks", hi: "डेस्क में साइन इन" },
+  "btn.open.command": { en: "Open Command Center", hi: "कमांड सेंटर खोलें" },
+  "btn.test.crisis": { en: "Test Crisis Mode", hi: "आपातकालीन मोड टेस्ट करें" },
+  "btn.open.desks": { en: "Open 4 Work Desks", hi: "4 वर्क डेस्क खोलें" },
+  "btn.gangman.app": { en: "Patroller Field App", hi: "पेट्रोलर फ़ील्ड ऐप" },
+  "btn.select.desk": { en: "Select Operating Desk", hi: "ऑपरेटिंग डेस्क चुनें" },
+  "btn.enter.portal": { en: "Enter Job Portal", hi: "जॉब पोर्टल में जाएं" },
+  "btn.capture.submit": { en: "Capture Photo & Submit", hi: "फोटो लें और सबमिट करें" },
+  "btn.transmitting": { en: "Sending...", hi: "भेज रहे हैं..." },
+  "btn.report.another": { en: "Report another defect", hi: "और एक खराबी रिपोर्ट करें" },
+  "btn.back.overview": { en: "Back to Project Overview", hi: "प्रोजेक्ट अवलोकन पर वापस" },
+  "btn.back.desks": { en: "Back to Desk Selection", hi: "डेस्क चयन पर वापस" },
+
+  /* ─── Veto ─── */
+  "veto.human": { en: "Human Override", hi: "मानवीय ओवरराइड" },
+  "veto.active": { en: "Override Active — Resume AI", hi: "ओवरराइड चालू — AI शुरू करें" },
+  "veto.title": { en: "DRM Override — Pause AI Plan", hi: "DRM ओवरराइड — AI योजना रोकें" },
+  "veto.desc": { en: "Pauses the AI plan and switches to manual mode. This action is saved in records.", hi: "AI योजना रुक जाएगी और मैनुअल मोड में आ जाएगा। यह कार्रवाई रिकॉर्ड में सेव होगी।" },
+  "veto.reason": { en: "Reason for override", hi: "ओवरराइड का कारण" },
+  "veto.note": { en: "Operational note", hi: "संचालन नोट" },
+  "veto.confirm": { en: "Confirm & Pause AI Plan", hi: "पुष्टि करें और AI योजना रोकें" },
+  "veto.submitting": { en: "Submitting...", hi: "सबमिट हो रहा है..." },
+  "veto.r1": { en: "VIP / Political", hi: "VIP / राजनीतिक" },
+  "veto.r2": { en: "Emergency", hi: "आपातकालीन" },
+  "veto.r3": { en: "Human Judgement", hi: "मानवीय निर्णय" },
+  "veto.r4": { en: "Wrong AI Assessment", hi: "गलत AI मूल्यांकन" },
+  "plan.approved": { en: "Plan Approved", hi: "योजना स्वीकृत" },
+
+  /* ─── TopBar page titles ─── */
+  "page.command": { en: "Command Center", hi: "कमांड सेंटर" },
+  "page.command.sub": { en: "Live Delhi-NCR Grid · 19 sections · 24 trains tracked", hi: "लाइव दिल्ली-NCR ग्रिड · 19 सेक्शन · 24 ट्रेनें ट्रैक" },
+  "page.planner": { en: "Block Planner", hi: "ब्लॉक प्लानर" },
+  "page.planner.sub": { en: "Schedule maker · Multi-department bundling", hi: "शेड्यूल बनाना · बहु-विभाग बंडलिंग" },
+  "page.simulation": { en: "Testing Lab", hi: "टेस्टिंग लैब" },
+  "page.simulation.sub": { en: "What-if tests · Crisis mode", hi: "क्या-अगर परीक्षण · आपातकालीन मोड" },
+  "page.field": { en: "Field Work", hi: "फ़ील्ड कार्य" },
+  "page.field.sub": { en: "Defect checking · Crew assignment · Digital sign-off", hi: "खराबी जांच · क्रू असाइनमेंट · डिजिटल साइन-ऑफ" },
+  "page.jobs": { en: "Job Portal", hi: "जॉब पोर्टल" },
+  "page.jobs.sub": { en: "Work permits · GPS photo proof", hi: "वर्क परमिट · GPS फोटो प्रमाण" },
+  "page.default": { en: "RAIL RAKSHAK", hi: "रेल रक्षक" },
+  "page.default.sub": { en: "Indian Railways Block Planning System", hi: "भारतीय रेलवे ब्लॉक प्लानिंग प्रणाली" },
+
+  /* ─── Landing Page — Hero ─── */
+  "hero.badge": { en: "Smart India Hackathon 2026 · Problem #26027", hi: "स्मार्ट इंडिया हैकथॉन 2026 · समस्या #26027" },
+  "hero.h1.line1": { en: "Smart Block Planning for", hi: "भारतीय रेलवे के लिए" },
+  "hero.h1.line2": { en: "Indian Railways", hi: "स्मार्ट ब्लॉक प्लानिंग" },
+  "hero.desc": {
+    en: "Rail Rakshak replaces phone calls and paper-based planning with a smart scheduling system. It checks which tracks need repair first, groups Engineering, Traction, and Signalling work together, and tracks every repair with GPS proof.",
+    hi: "रेल रक्षक फोन कॉल और कागज़ी प्लानिंग की जगह एक स्मार्ट शेड्यूलिंग सिस्टम लाता है। यह जांचता है कि कौन से ट्रैक पहले ठीक करने हैं, इंजीनियरिंग, ट्रैक्शन और सिग्नलिंग का काम साथ में जोड़ता है, और हर मरम्मत को GPS प्रमाण के साथ ट्रैक करता है।"
+  },
+
+  /* ─── Landing Page — Stats ─── */
+  "stat.sections.val": { en: "19 Sections", hi: "19 सेक्शन" },
+  "stat.sections.label": { en: "Delhi NCR Rail Network", hi: "दिल्ली NCR रेल नेटवर्क" },
+  "stat.sections.sub": { en: "Real track layout & distances", hi: "असली ट्रैक लेआउट और दूरी" },
+  "stat.trains.val": { en: "24 Trains", hi: "24 ट्रेनें" },
+  "stat.trains.label": { en: "Real-time Train Tracking", hi: "रीयल-टाइम ट्रेन ट्रैकिंग" },
+  "stat.trains.sub": { en: "Live positions & delays", hi: "लाइव स्थिति और देरी" },
+  "stat.roles.val": { en: "4 Roles", hi: "4 भूमिकाएं" },
+  "stat.roles.label": { en: "Connected Work Desks", hi: "जुड़े हुए वर्क डेस्क" },
+  "stat.roles.sub": { en: "DRM, Control, Inspector, Worker", hi: "DRM, कंट्रोल, इंस्पेक्टर, कर्मी" },
+  "stat.downtime.val": { en: "42% ↓", hi: "42% ↓" },
+  "stat.downtime.label": { en: "Less Downtime", hi: "कम डाउनटाइम" },
+  "stat.downtime.sub": { en: "Multi-department super-blocks", hi: "बहु-विभाग सुपर-ब्लॉक" },
+
+  /* ─── Landing — Problem Section ─── */
+  "problem.tag": { en: "Current Problems", hi: "वर्तमान समस्याएं" },
+  "problem.h2": { en: "Why Indian Railways needs smart block planning", hi: "भारतीय रेलवे को स्मार्ट ब्लॉक प्लानिंग क्यों चाहिए" },
+  "problem.desc": {
+    en: "Today, maintenance blocks are requested separately by three departments. Without shared data, the same track gets shut down multiple times, delaying passenger and freight trains.",
+    hi: "आज, तीन विभाग अलग-अलग मेंटेनेंस ब्लॉक मांगते हैं। बिना साझा डेटा के, एक ही ट्रैक बार-बार बंद होता है, जिससे यात्री और मालगाड़ी ट्रेनों में देरी होती है।"
+  },
+  "problem.1.title": { en: "Department Silos", hi: "विभागीय अलगाव" },
+  "problem.1.desc": {
+    en: "Track, Overhead Electric, and Signalling departments book separate maintenance blocks on different days for the same track section.",
+    hi: "ट्रैक, ओवरहेड इलेक्ट्रिक, और सिग्नलिंग विभाग एक ही ट्रैक सेक्शन के लिए अलग-अलग दिनों में अलग मेंटेनेंस ब्लॉक बुक करते हैं।"
+  },
+  "problem.2.title": { en: "Wasted Track Time", hi: "ट्रैक समय की बर्बादी" },
+  "problem.2.desc": {
+    en: "Instead of repairing track, wires, and signals at the same time, trains are stopped three times more than needed.",
+    hi: "ट्रैक, तार और सिग्नल एक साथ ठीक करने की बजाय, ट्रेनों को जरूरत से तीन गुना ज्यादा रोका जाता है।"
+  },
+  "problem.3.title": { en: "No Early Warning", hi: "कोई पूर्व चेतावनी नहीं" },
+  "problem.3.desc": {
+    en: "Inspection data from TMS, TDMS, and SMMS stays disconnected. Teams fix things after they break, not before.",
+    hi: "TMS, TDMS, और SMMS का इंस्पेक्शन डेटा अलग-अलग रहता है। टीमें टूटने के बाद ठीक करती हैं, पहले नहीं।"
+  },
+  "problem.4.title": { en: "Slow Crisis Response", hi: "धीमी आपातकालीन प्रतिक्रिया" },
+  "problem.4.desc": {
+    en: "When winter fog hits or an emergency happens, rerouting trains and holding freight takes hours of phone calls.",
+    hi: "जब सर्दियों का कोहरा आता है या कोई आपातकालीन स्थिति होती है, तो ट्रेनों को रीरूट करने में घंटों फोन कॉल लगते हैं।"
+  },
+
+  /* ─── Landing — Architecture / Pipeline ─── */
+  "arch.tag": { en: "How It Works", hi: "यह कैसे काम करता है" },
+  "arch.h2": { en: "From raw data to coordinated track repair", hi: "कच्चे डेटा से लेकर सुव्यवस्थित ट्रैक मरम्मत तक" },
+  "arch.desc": {
+    en: "Rail Rakshak connects to existing Indian Railways systems, runs risk checks and schedule optimization, and delivers work instructions to every desk.",
+    hi: "रेल रक्षक मौजूदा भारतीय रेलवे सिस्टम से जुड़ता है, रिस्क चेक और शेड्यूल ऑप्टिमाइज़ेशन चलाता है, और हर डेस्क को काम के निर्देश देता है।"
+  },
+  "arch.s1": { en: "Step 01", hi: "चरण 01" },
+  "arch.s1.name": { en: "Data Collection", hi: "डेटा संग्रह" },
+  "arch.s1.p1": { en: "Track condition & defects (TMS)", hi: "ट्रैक स्थिति और खराबी (TMS)" },
+  "arch.s1.p2": { en: "Overhead wire tension (TDMS)", hi: "ओवरहेड तार का तनाव (TDMS)" },
+  "arch.s1.p3": { en: "Signal equipment status (SMMS)", hi: "सिग्नल उपकरण स्थिति (SMMS)" },
+  "arch.s1.p4": { en: "Live train schedules (COA)", hi: "लाइव ट्रेन शेड्यूल (COA)" },
+  "arch.s2": { en: "Step 02", hi: "चरण 02" },
+  "arch.s2.name": { en: "Risk Check", hi: "रिस्क जांच" },
+  "arch.s2.p1": { en: "72-hour failure prediction", hi: "72 घंटे की खराबी भविष्यवाणी" },
+  "arch.s2.p2": { en: "Track wear-and-tear tracking", hi: "ट्रैक घिसावट ट्रैकिंग" },
+  "arch.s2.p3": { en: "Priority-based risk ranking", hi: "प्राथमिकता-आधारित रिस्क रैंकिंग" },
+  "arch.s2.p4": { en: "87.4% accuracy tested", hi: "87.4% सटीकता परीक्षित" },
+  "arch.s3": { en: "Step 03", hi: "चरण 03" },
+  "arch.s3.name": { en: "Schedule Maker", hi: "शेड्यूल बनाना" },
+  "arch.s3.p1": { en: "Multi-department work bundling", hi: "बहु-विभाग कार्य बंडलिंग" },
+  "arch.s3.p2": { en: "Best time slot placement", hi: "सबसे अच्छे समय स्लॉट" },
+  "arch.s3.p3": { en: "Single-track safety rules", hi: "सिंगल-ट्रैक सुरक्षा नियम" },
+  "arch.s3.p4": { en: "Stress-tested schedule", hi: "स्ट्रेस-टेस्टेड शेड्यूल" },
+  "arch.s4": { en: "Step 04", hi: "चरण 04" },
+  "arch.s4.name": { en: "Work Desks", hi: "वर्क डेस्क" },
+  "arch.s4.p1": { en: "DRM approval & override", hi: "DRM मंजूरी और ओवरराइड" },
+  "arch.s4.p2": { en: "Control room live dispatch", hi: "कंट्रोल रूम लाइव डिस्पैच" },
+  "arch.s4.p3": { en: "Inspector crew assignment", hi: "इंस्पेक्टर क्रू असाइनमेंट" },
+  "arch.s4.p4": { en: "Worker GPS photo sign-off", hi: "कर्मी GPS फोटो साइन-ऑफ" },
+
+  /* ─── Landing — Engines / Core Features ─── */
+  "engines.tag": { en: "Core Features", hi: "मुख्य विशेषताएं" },
+  "engines.h2": { en: "Six smart tools working together", hi: "छह स्मार्ट टूल एक साथ काम करते हैं" },
+  "engines.desc": {
+    en: "Built specifically for Indian Railways operations and safety rules.",
+    hi: "भारतीय रेलवे संचालन और सुरक्षा नियमों के लिए विशेष रूप से बनाया गया।"
+  },
+  "eng.1.tag": { en: "Risk Intelligence", hi: "रिस्क इंटेलिजेंस" },
+  "eng.1.title": { en: "Failure Risk Checker", hi: "खराबी रिस्क चेकर" },
+  "eng.1.tech": { en: "Based on past failure data", hi: "पिछले खराबी डेटा पर आधारित" },
+  "eng.1.desc": { en: "Checks 72-hour failure risk for track, overhead wires, and signals using real field data from TMS, TDMS, and SMMS.", hi: "TMS, TDMS और SMMS के असली फ़ील्ड डेटा से ट्रैक, ओवरहेड तार और सिग्नल की 72 घंटे की खराबी रिस्क जांचता है।" },
+  "eng.1.highlight": { en: "87.4% Accuracy", hi: "87.4% सटीकता" },
+  "eng.2.tag": { en: "Multi-Dept Bundling", hi: "बहु-विभाग बंडलिंग" },
+  "eng.2.title": { en: "Super-Block Combiner", hi: "सुपर-ब्लॉक कम्बाइनर" },
+  "eng.2.tech": { en: "Smart work grouping", hi: "स्मार्ट कार्य समूहन" },
+  "eng.2.desc": { en: "Groups Track, Overhead Electric, and Signalling work into one block so the track shuts down once instead of three times.", hi: "ट्रैक, ओवरहेड इलेक्ट्रिक, और सिग्नलिंग का काम एक ब्लॉक में जोड़ता है ताकि ट्रैक तीन बार की बजाय एक बार बंद हो।" },
+  "eng.2.highlight": { en: "72% Multi-Dept Overlap", hi: "72% बहु-विभाग ओवरलैप" },
+  "eng.3.tag": { en: "Smart Scheduling", hi: "स्मार्ट शेड्यूलिंग" },
+  "eng.3.title": { en: "Schedule Optimizer", hi: "शेड्यूल ऑप्टिमाइज़र" },
+  "eng.3.tech": { en: "Finds best time slots", hi: "सबसे अच्छे टाइम स्लॉट खोजता है" },
+  "eng.3.desc": { en: "Puts repairs in low-traffic hours (00:30–04:30) while making sure crews are available and no two teams work on the same track at once.", hi: "मरम्मत को कम ट्रैफिक वाले घंटों (00:30–04:30) में रखता है और सुनिश्चित करता है कि क्रू उपलब्ध हों और एक ट्रैक पर एक साथ दो टीमें काम न करें।" },
+  "eng.3.highlight": { en: "500 km solved in < 3 seconds", hi: "500 km < 3 सेकंड में हल" },
+  "eng.4.tag": { en: "Delay Tracking", hi: "देरी ट्रैकिंग" },
+  "eng.4.title": { en: "Delay Impact Checker", hi: "देरी प्रभाव चेकर" },
+  "eng.4.tech": { en: "Checks ripple effects", hi: "लहर प्रभाव जांचता है" },
+  "eng.4.desc": { en: "Treats the rail network as a connected graph and calculates how much delay and cost a maintenance block will cause to other trains.", hi: "रेल नेटवर्क को एक जुड़े ग्राफ की तरह देखता है और गणना करता है कि एक मेंटेनेंस ब्लॉक अन्य ट्रेनों में कितनी देरी और खर्चा करेगा।" },
+  "eng.4.highlight": { en: "Real-time ₹ Cost vs Safety", hi: "रीयल-टाइम ₹ लागत बनाम सुरक्षा" },
+  "eng.5.tag": { en: "Stress Testing", hi: "स्ट्रेस टेस्टिंग" },
+  "eng.5.title": { en: "Schedule Tester", hi: "शेड्यूल टेस्टर" },
+  "eng.5.tech": { en: "500 random tests", hi: "500 रैंडम परीक्षण" },
+  "eng.5.desc": { en: "Throws random problems like dense fog, extra freight, train breakdowns, and VIP trains at the schedule to make sure it can handle real-world chaos.", hi: "शेड्यूल पर घने कोहरे, अतिरिक्त मालगाड़ी, ट्रेन ब्रेकडाउन और VIP ट्रेनों जैसी रैंडम समस्याएं डालता है ताकि पता चले कि यह असली समस्याओं को संभाल सकता है।" },
+  "eng.5.highlight": { en: "95% delay guarantee", hi: "95% देरी गारंटी" },
+  "eng.6.tag": { en: "Safety Rules", hi: "सुरक्षा नियम" },
+  "eng.6.title": { en: "Digital Work Order", hi: "डिजिटल वर्क ऑर्डर" },
+  "eng.6.tech": { en: "IRS-2024 rules built-in", hi: "IRS-2024 नियम अंतर्निहित" },
+  "eng.6.desc": { en: "Instantly creates safety work orders with exact speed limits, detonator placement rules, and digital signatures.", hi: "तुरंत सटीक गति सीमा, डेटोनेटर प्लेसमेंट नियम और डिजिटल हस्ताक्षर के साथ सुरक्षा वर्क ऑर्डर बनाता है।" },
+  "eng.6.highlight": { en: "Ready in < 1 second", hi: "< 1 सेकंड में तैयार" },
+
+  /* ─── Landing — Constraints ─── */
+  "constraints.tag": { en: "Delhi-NCR Railway Challenges", hi: "दिल्ली-NCR रेलवे चुनौतियां" },
+  "const.1": { en: "Winter Fog (Zero Visibility)", hi: "सर्दियों का कोहरा (शून्य दृश्यता)" },
+  "const.1.sub": { en: "Physical blocks pause; remote sensors and sound-based detection take over", hi: "फिज़िकल ब्लॉक रुक जाते हैं; रिमोट सेंसर और ध्वनि-आधारित पहचान शुरू" },
+  "const.2": { en: "VIP Security Routes", hi: "VIP सुरक्षा मार्ग" },
+  "const.2.sub": { en: "5 km NDLS safety zone automatically applied", hi: "5 km NDLS सुरक्षा क्षेत्र स्वचालित रूप से लागू" },
+  "const.3": { en: "Yamuna Rail Bridges", hi: "यमुना रेल पुल" },
+  "const.3.sub": { en: "Special bridge failure plan with pre-planned diversions", hi: "पूर्व-नियोजित डायवर्शन के साथ विशेष पुल विफलता योजना" },
+  "const.4": { en: "Heavy Freight Trains (DFC)", hi: "भारी मालगाड़ी ट्रेनें (DFC)" },
+  "const.4.sub": { en: "Braking distances and freight yard capacity respected", hi: "ब्रेकिंग दूरी और फ्रेट यार्ड क्षमता का ध्यान" },
+  "const.5": { en: "Namo Bharat RRTS Links", hi: "नमो भारत RRTS लिंक" },
+  "const.5.sub": { en: "Shared corridor coordination at Anand Vihar & Ghaziabad", hi: "आनंद विहार और गाज़ियाबाद पर साझा कॉरिडोर समन्वय" },
+  "const.6": { en: "City Level Crossings", hi: "शहरी लेवल क्रॉसिंग" },
+  "const.6.sub": { en: "Delhi Traffic Police rush hour sync to prevent city jams", hi: "शहरी जाम रोकने के लिए दिल्ली ट्रैफिक पुलिस रश आवर सिंक" },
+
+  /* ─── Landing — Planning Horizons ─── */
+  "horizons.tag": { en: "Planning at Every Scale", hi: "हर स्तर पर प्लानिंग" },
+  "horizons.h2": { en: "From 20-minute quick fixes to 90-day seasonal plans", hi: "20 मिनट के क्विक फिक्स से लेकर 90 दिन की मौसमी योजनाओं तक" },
+  "horizons.desc": {
+    en: "Rail Rakshak works at four different time scales — quick response for live traffic and detailed planning for long-term corridor maintenance.",
+    hi: "रेल रक्षक चार अलग-अलग समय पैमानों पर काम करता है — लाइव ट्रैफिक के लिए त्वरित प्रतिक्रिया और दीर्घकालिक कॉरिडोर रखरखाव के लिए विस्तृत प्लानिंग।"
+  },
+  "hz.1.badge": { en: "Quick Fix", hi: "त्वरित फिक्स" },
+  "hz.1.title": { en: "Rolling Gap Filler", hi: "रोलिंग गैप फिलर" },
+  "hz.1.desc": { en: "Checks live train feeds every 5 minutes. When a delayed train creates a gap, it quickly slots in a short 25-minute repair window.", hi: "हर 5 मिनट में लाइव ट्रेन फीड चेक करता है। जब कोई देरी से आई ट्रेन एक गैप बनाती है, तो तुरंत 25 मिनट की छोटी मरम्मत विंडो डालता है।" },
+  "hz.2.badge": { en: "Weekly Plan", hi: "साप्ताहिक योजना" },
+  "hz.2.title": { en: "7-Day Coordinated Plan", hi: "7 दिन की समन्वित योजना" },
+  "hz.2.desc": { en: "Multi-department schedule that's been tested and shared with Section Controllers and field workers.", hi: "बहु-विभाग शेड्यूल जो परीक्षित है और सेक्शन कंट्रोलर्स और फ़ील्ड कर्मियों के साथ साझा किया गया है।" },
+  "hz.3.badge": { en: "Seasonal Plan", hi: "मौसमी योजना" },
+  "hz.3.title": { en: "90-Day Weather-Based Plan", hi: "90 दिन मौसम-आधारित योजना" },
+  "hz.3.desc": { en: "Winter focuses on rail crack detection in fog; summer checks wire sag; monsoon monitors bridge foundations.", hi: "सर्दियों में कोहरे में रेल दरार जांच; गर्मियों में तार झुकाव जांच; मानसून में पुल नींव निगरानी।" },
+  "hz.4.badge": { en: "Crisis Mode", hi: "आपातकालीन मोड" },
+  "hz.4.title": { en: "Multi-Crisis Handler", hi: "बहु-संकट हैंडलर" },
+  "hz.4.desc": { en: "When a rail crack happens during fog with a VIP train incoming, the system reroutes and holds trains automatically in seconds.", hi: "जब VIP ट्रेन आने के दौरान कोहरे में रेल दरार होती है, तो सिस्टम सेकंडों में ट्रेनों को रीरूट करता है और रोकता है।" },
+
+  /* ─── Landing — Benchmarks ─── */
+  "bench.tag": { en: "Results & Numbers", hi: "परिणाम और आंकड़े" },
+  "bench.h2": { en: "Real performance improvements", hi: "वास्तविक प्रदर्शन सुधार" },
+  "bench.desc": { en: "Tested on Delhi NCR network (19 sections, 24 trains, real timetable data).", hi: "दिल्ली NCR नेटवर्क पर परीक्षित (19 सेक्शन, 24 ट्रेनें, असली टाइमटेबल डेटा)।" },
+  "bench.col.metric": { en: "What We Measure", hi: "क्या मापते हैं" },
+  "bench.col.ours": { en: "With Rail Rakshak", hi: "रेल रक्षक के साथ" },
+  "bench.col.old": { en: "Old Way", hi: "पुराना तरीका" },
+  "bench.col.why": { en: "Why It Matters", hi: "यह क्यों मायने रखता है" },
+
+  /* ─── Landing — CTA ─── */
+  "cta.h2": { en: "See the complete railway workflow", hi: "पूरा रेलवे वर्कफ़्लो देखें" },
+  "cta.desc": { en: "Sign in to test the DRM command console, optimize the weekly schedule, or capture GPS-verified work orders from the field.", hi: "DRM कमांड कंसोल टेस्ट करने, साप्ताहिक शेड्यूल ऑप्टिमाइज़ करने, या फ़ील्ड से GPS-सत्यापित वर्क ऑर्डर कैप्चर करने के लिए साइन इन करें।" },
+
+  /* ─── Login Page ─── */
+  "login.h1": { en: "Select Your Work Desk", hi: "अपना वर्क डेस्क चुनें" },
+  "login.desc": {
+    en: "Experience the complete railway maintenance process from four different views, all connected to the same live Delhi-NCR railway grid.",
+    hi: "चार अलग-अलग व्यू से पूरी रेलवे मेंटेनेंस प्रक्रिया का अनुभव करें, सभी एक ही लाइव दिल्ली-NCR रेलवे ग्रिड से जुड़े हुए।"
+  },
+  "login.demo": { en: "Demo Mode Active", hi: "डेमो मोड चालू" },
+  "login.demo.desc": {
+    en: "All four desks share the same data, risk models, and activity records.",
+    hi: "चारों डेस्क एक ही डेटा, रिस्क मॉडल और एक्टिविटी रिकॉर्ड साझा करते हैं।"
+  },
+  "login.gangman": { en: "Open Patroller Handset Simulator", hi: "पेट्रोलर हैंडसेट सिम्युलेटर खोलें" },
+  "login.dept": { en: "Select Department", hi: "विभाग चुनें" },
+  "login.footer": { en: "Northern Railway · Delhi Division · Smart India Hackathon 2026", hi: "उत्तर रेलवे · दिल्ली मंडल · स्मार्ट इंडिया हैकथॉन 2026" },
+
+  /* ─── Patrol Page ─── */
+  "patrol.name": { en: "RAKSHAK PATROL", hi: "रक्षक पेट्रोल" },
+  "patrol.version": { en: "Patroller Field Handset v2.1", hi: "पेट्रोलर फ़ील्ड हैंडसेट v2.1" },
+  "patrol.defect": { en: "Defect Type Found", hi: "पाई गई खराबी का प्रकार" },
+  "patrol.section": { en: "Track Section", hi: "ट्रैक सेक्शन" },
+  "patrol.gps": { en: "Get GPS Location", hi: "GPS लोकेशन लें" },
+  "patrol.note.placeholder": { en: "Observation note (e.g. ~9mm crack)...", hi: "निरीक्षण नोट (जैसे ~9mm दरार)..." },
+  "patrol.exif": { en: "GPS & Timestamp Auto-Saved", hi: "GPS और समय स्वचालित सेव" },
+  "patrol.sent": { en: "Report Sent", hi: "रिपोर्ट भेजी गई" },
+  "patrol.sent.sub": { en: "Appears in Section Inspector's Pending list", hi: "सेक्शन इंस्पेक्टर की पेंडिंग सूची में दिखेगा" },
+  "patrol.h1": { en: "The Track Patroller's Handset", hi: "ट्रैक पेट्रोलर का हैंडसेट" },
+  "patrol.desc": { en: "Every patroller and keyman carries Rakshak Patrol. One photo capture locks GPS location, calculates exact distance markers, and sends the ticket to the Section Inspector in under a second.", hi: "हर पेट्रोलर और कीमैन रक्षक पेट्रोल रखता है। एक फोटो कैप्चर GPS लोकेशन लॉक करता है, सटीक दूरी मार्कर गणना करता है, और एक सेकंड में टिकट सेक्शन इंस्पेक्टर को भेजता है।" },
+  "patrol.features": { en: "Key Features:", hi: "मुख्य विशेषताएं:" },
+  "patrol.f1": { en: "Works offline in tunnels and remote areas", hi: "सुरंगों और दूरदराज़ इलाकों में ऑफलाइन काम करता है" },
+  "patrol.f2": { en: "Auto GPS distance calculation", hi: "ऑटो GPS दूरी गणना" },
+  "patrol.f3": { en: "Tamper-proof photo stamp prevents fake reports", hi: "छेड़छाड़-रोधी फोटो स्टैम्प नकली रिपोर्ट रोकता है" },
+  "patrol.f4": { en: "Direct feed into the AI optimization queue", hi: "AI ऑप्टिमाइज़ेशन कतार में सीधी फीड" },
+
+  /* ─── KPI Labels ─── */
+  "kpi.downtime": { en: "Asset Downtime", hi: "एसेट डाउनटाइम" },
+  "kpi.reduction": { en: "Downtime Reduction", hi: "डाउनटाइम कमी" },
+  "kpi.overlap": { en: "Super-Block Overlap", hi: "सुपर-ब्लॉक ओवरलैप" },
+  "kpi.delay": { en: "Avg Train Delay", hi: "औसत ट्रेन देरी" },
+  "kpi.resilience": { en: "Resilience Score", hi: "लचीलापन स्कोर" },
+  "kpi.defects": { en: "Open Defects", hi: "खुली खराबियां" },
+  "kpi.overlap.sub": { en: "Multi-department shared minutes", hi: "बहु-विभाग साझा मिनट" },
+  "kpi.reduction.sub": { en: "Single-corridor bundled occupancy", hi: "सिंगल-कॉरिडोर बंडल ऑक्यूपेंसी" },
+
+  /* ─── Misc / Data feeds ─── */
+  "feeds.title": { en: "Live Data Feeds", hi: "लाइव डेटा फीड" },
+
+  /* ─── Metric rows ─── */
+  "m.1": { en: "Emergency Block Stoppages", hi: "आपातकालीन ब्लॉक रुकावट" },
+  "m.1.note": { en: "Early failure prediction prevents emergency shutdowns", hi: "जल्दी खराबी भविष्यवाणी आपातकालीन बंदी रोकती है" },
+  "m.2": { en: "Multi-Dept Super-Block Overlap", hi: "बहु-विभाग सुपर-ब्लॉक ओवरलैप" },
+  "m.2.note": { en: "Track, Traction & Signals work together in one window", hi: "ट्रैक, ट्रैक्शन और सिग्नल एक विंडो में साथ काम करते हैं" },
+  "m.3": { en: "Weekly Corridor Downtime", hi: "साप्ताहिक कॉरिडोर डाउनटाइम" },
+  "m.3.note": { en: "3 separate blocks combined into 1 unified window", hi: "3 अलग ब्लॉक 1 एकीकृत विंडो में जोड़े गए" },
+  "m.4": { en: "Average Train Delay from Maintenance", hi: "मेंटेनेंस से औसत ट्रेन देरी" },
+  "m.4.note": { en: "Maintenance shifted to low-traffic hours (00:30–04:30)", hi: "मेंटेनेंस कम ट्रैफिक घंटों (00:30–04:30) में" },
+  "m.5": { en: "Crisis Rerouting Time", hi: "संकट रीरूटिंग समय" },
+  "m.5.note": { en: "Instant rerouting replaces hours of phone calls", hi: "तुरंत रीरूटिंग घंटों के फोन कॉल की जगह लेती है" },
+  "m.6": { en: "Safety Work Order Generation", hi: "सुरक्षा वर्क ऑर्डर बनाना" },
+  "m.6.note": { en: "Digital permit with safety rule references", hi: "सुरक्षा नियम संदर्भों के साथ डिजिटल परमिट" },
+  "m.7": { en: "Field Work Verification", hi: "फ़ील्ड कार्य सत्यापन" },
+  "m.7.note": { en: "Tamper-proof GPS + photo verification before release", hi: "रिलीज़ से पहले छेड़छाड़-रोधी GPS + फोटो सत्यापन" },
+};
+
+export default dict;

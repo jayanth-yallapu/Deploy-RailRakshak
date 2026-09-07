@@ -18,26 +18,38 @@ function Card({
   spark?: number[];
 }) {
   return (
-    <div className="panel group relative overflow-hidden p-4">
-      <div className="absolute -right-6 -top-6 h-20 w-20 rounded-full opacity-15 blur-2xl" style={{ background: tone }} />
-      <div className="flex items-center justify-between">
-        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-dim">{label}</span>
-        <span style={{ color: tone }}>{icon}</span>
+    <div className="panel flex flex-col justify-between p-4 transition hover:border-edge/90">
+      <div>
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-dim">{label}</span>
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-hull border border-edge/60" style={{ color: tone }}>
+            {icon}
+          </span>
+        </div>
+        <div className="tabular mt-2.5 text-2xl font-bold tracking-tight text-ink font-mono" style={{ color: tone }}>
+          {value}
+        </div>
       </div>
-      <div className="tabular mt-2 text-[26px] font-bold leading-none" style={{ color: tone }}>
-        {value}
-      </div>
+
       {spark && spark.length > 0 ? (
-        <div className="mt-2">
-          <div className="flex h-[22px] items-end gap-[2px]">
+        <div className="mt-3">
+          <div className="flex h-5 items-end gap-1">
             {spark.map((h, i) => (
-              <div key={i} className="flex-1 rounded-sm transition-all duration-500" style={{ height: `${Math.max(8, (h / Math.max(...spark, 1)) * 100)}%`, background: tone, opacity: 0.35 + (i / spark.length) * 0.5 }} />
+              <div
+                key={i}
+                className="flex-1 rounded-sm transition-all duration-300"
+                style={{
+                  height: `${Math.max(12, (h / Math.max(...spark, 1)) * 100)}%`,
+                  backgroundColor: tone,
+                  opacity: 0.3 + (i / spark.length) * 0.5,
+                }}
+              />
             ))}
           </div>
-          <div className="mt-1 text-[10px] leading-snug text-faint">{sub}</div>
+          <div className="mt-1.5 text-[11px] text-faint leading-snug truncate">{sub}</div>
         </div>
       ) : (
-        <div className="mt-1.5 text-[11px] leading-snug text-faint">{sub}</div>
+        <div className="mt-2 text-[11px] text-faint leading-snug">{sub}</div>
       )}
     </div>
   );
@@ -47,50 +59,51 @@ export default function KpiStrip({ state }: { state: DashboardState }) {
   const k = state.kpis;
   const hasPlan = !!state.latestPlan;
   const reduction = k.downtimeBaselineH > 0 ? Math.round((1 - k.downtimeOptimizedH / k.downtimeBaselineH) * 100) : 0;
+
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
       <Card
         label="Asset Downtime"
         value={hasPlan ? `${k.downtimeOptimizedH.toFixed(1)}h` : "—"}
-        sub={hasPlan ? `vs ${k.downtimeBaselineH.toFixed(1)}h manual baseline` : "Run optimizer to compute"}
-        icon={<Timer size={15} />}
-        tone="#f5a524"
+        sub={hasPlan ? `vs ${k.downtimeBaselineH.toFixed(1)}h manual baseline` : "Run optimizer to calculate"}
+        icon={<Timer size={14} />}
+        tone="#f59e0b"
       />
       <Card
-        label="Downtime ↓"
+        label="Downtime Reduction"
         value={hasPlan ? `${reduction}%` : "—"}
-        sub="single-corridor occupancy"
-        icon={<ArrowDownRight size={15} />}
-        tone="#34d399"
+        sub="Single-corridor bundled occupancy"
+        icon={<ArrowDownRight size={14} />}
+        tone="#10b981"
       />
       <Card
         label="Super-Block Overlap"
         value={hasPlan ? `${k.bundlingPct}%` : "—"}
-        sub="ENG+TRD+SNT bundled minutes"
-        icon={<Boxes size={15} />}
-        tone="#a78bfa"
+        sub="Multi-department shared minutes"
+        icon={<Boxes size={14} />}
+        tone="#8b5cf6"
       />
       <Card
         label="Avg Train Delay"
         value={hasPlan ? `${k.avgDelayMin.toFixed(1)}m` : "—"}
-        sub="target < 5 min · baseline 27+ min"
-        icon={<Gauge size={15} />}
-        tone="#22d3ee"
+        sub="Target < 8 min · baseline 28+ min"
+        icon={<Gauge size={14} />}
+        tone="#0ea5e9"
       />
       <Card
-        label="Resilience"
-        value={hasPlan ? `${k.resilienceScore}` : "—"}
-        sub="500-run Monte Carlo distribution"
-        icon={<ShieldCheck size={15} />}
-        tone="#34d399"
+        label="Resilience Index"
+        value={hasPlan ? `${k.resilienceScore}/100` : "—"}
+        sub="500 Monte Carlo stress runs"
+        icon={<ShieldCheck size={14} />}
+        tone="#10b981"
         spark={state.latestPlan ? [0, 1, 2, 3, 4, 5, 6, 7].map((i) => state.latestPlan!.kpis[`h${i}`] ?? 0) : undefined}
       />
       <Card
         label="Open Defects"
         value={`${state.counts.openDefects}`}
-        sub={`${state.counts.criticalDefects} critical · ${state.counts.assetsBelowHealth} assets degraded`}
-        icon={<Zap size={15} />}
-        tone={state.counts.criticalDefects > 4 ? "#ff4d4f" : "#ff9933"}
+        sub={`${state.counts.criticalDefects} critical · ${state.counts.assetsBelowHealth} degraded`}
+        icon={<Zap size={14} />}
+        tone={state.counts.criticalDefects > 4 ? "#f43f5e" : "#f59e0b"}
       />
     </div>
   );

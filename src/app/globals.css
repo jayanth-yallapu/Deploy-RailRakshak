@@ -1,73 +1,103 @@
 @import "tailwindcss";
 
 @theme {
-  --font-display: var(--font-space), "Space Grotesk", system-ui, sans-serif;
-  --font-mono: var(--font-jb), "JetBrains Mono", ui-monospace, monospace;
+  --font-display: var(--font-sans), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  --color-abyss: #05080e;
-  --color-hull: #070c15;
-  --color-panel: #0a101c;
-  --color-edge: #1b2436;
-  --color-ink: #e8eef7;
-  --color-dim: #93a1b8;
-  --color-faint: #59687f;
-  --color-amber: #f5a524;
-  --color-saffron: #ff9933;
-  --color-signal: #ff4d4f;
-  --color-mint: #34d399;
-  --color-cyan: #22d3ee;
-  --color-violet: #a78bfa;
+  /* ─── Default = Light mode tokens ─── */
+  --color-abyss: #f3f4f6;
+  --color-hull: #ffffff;
+  --color-panel: #ffffff;
+  --color-edge: #d1d5db;
+  --color-ink: #1f2937;
+  --color-dim: #6b7280;
+  --color-faint: #9ca3af;
+
+  /* ─── Accent palette — Indian Railway inspired ─── */
+  --color-primary: #1d4ed8;
+  --color-amber: #b45309;
+  --color-saffron: #c2410c;
+  --color-signal: #dc2626;
+  --color-mint: #15803d;
+  --color-cyan: #0369a1;
+  --color-violet: #7c3aed;
 }
 
+/* ─── Light Mode (default) ─── */
 html {
   background: var(--color-abyss);
-  scrollbar-color: #223148 #05080e;
+  color-scheme: light;
+  scrollbar-color: #c4c8d0 #f3f4f6;
 }
 
 body {
-  background:
-    radial-gradient(1000px 500px at 85% -10%, rgba(245, 165, 36, 0.035), transparent 60%),
-    var(--color-abyss);
+  background: var(--color-abyss);
   color: var(--color-ink);
   font-family: var(--font-display);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-::selection { background: rgba(245, 165, 36, 0.3); }
+/* ─── Dark Mode Override ─── */
+[data-theme="dark"] {
+  --color-abyss: #1a1d23;
+  --color-hull: #22262e;
+  --color-panel: #2a2e36;
+  --color-edge: #3f434d;
+  --color-ink: #e5e7eb;
+  --color-dim: #9ca3af;
+  --color-faint: #6b7280;
+  --color-primary: #3b82f6;
+  --color-amber: #d97706;
+  --color-saffron: #ea580c;
+  --color-signal: #ef4444;
+  --color-mint: #22c55e;
+  --color-cyan: #0ea5e9;
+  --color-violet: #8b5cf6;
 
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: #223148; border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: #2d3f5d; }
+  color-scheme: dark;
+  scrollbar-color: #3f434d #1a1d23;
+}
+
+/* ---------- Custom Scrollbars ---------- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: var(--color-edge); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-faint); }
 ::-webkit-scrollbar-track { background: transparent; }
 
-/* ---------- national hairline ---------- */
+/* ---------- Indian Tricolor Stripe ---------- */
 .tricolor {
   height: 3px;
-  background: linear-gradient(90deg, #ff9933 0 33.4%, #f0f4f8 33.4% 66.7%, #138808 66.7% 100%);
+  background: linear-gradient(90deg, #f97316 0 33.3%, #f8fafc 33.3% 66.6%, #16a34a 66.6% 100%);
 }
 
-/* ---------- panels — flat, crisp, console-grade ---------- */
+/* ---------- Panels — Clean, Structured ---------- */
 .panel {
-  background: #0a101c;
-  border: 1px solid #1b2436;
+  background: var(--color-panel);
+  border: 1px solid var(--color-edge);
   border-radius: 10px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.06);
 }
+[data-theme="dark"] .panel {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.25);
+}
+
 .panel-hd {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 36px;
-  padding: 8px 14px;
-  border-bottom: 1px solid #161e2e;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
+  min-height: 40px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--color-edge);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
   color: var(--color-dim);
 }
 
-/* numbered editorial section label */
 .sec-num {
   font-family: var(--font-mono);
   color: var(--color-faint);
@@ -76,26 +106,27 @@ body {
 
 .gridlines {
   background-image:
-    linear-gradient(rgba(120, 145, 190, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(120, 145, 190, 0.04) 1px, transparent 1px);
-  background-size: 44px 44px;
+    linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+[data-theme="dark"] .gridlines {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
 }
 
-/* ---------- keyframes (restrained) ---------- */
+/* ---------- Keyframes ---------- */
 @keyframes dashflow { to { stroke-dashoffset: -120; } }
-@keyframes pulseRing {
-  0% { transform: scale(0.6); opacity: 0.9; }
-  100% { transform: scale(2.4); opacity: 0; }
-}
-@keyframes blinkdot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes blinkdot { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @keyframes fogdrift {
-  0% { transform: translateX(-5%); }
-  50% { transform: translateX(5%); }
-  100% { transform: translateX(-5%); }
+  0% { transform: translateX(-4%); }
+  50% { transform: translateX(4%); }
+  100% { transform: translateX(-4%); }
 }
 @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
 @keyframes riseIn {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 @keyframes shimmer {
@@ -105,30 +136,42 @@ body {
 @keyframes spinSlow { to { transform: rotate(360deg); } }
 
 .anim-flow { animation: dashflow 4s linear infinite; }
-.anim-blink { animation: blinkdot 1.8s ease-in-out infinite; }
-.anim-fog { animation: fogdrift 16s ease-in-out infinite; }
-.anim-rise { animation: riseIn 0.45s cubic-bezier(0.2, 0.9, 0.25, 1) both; }
-.anim-spin-slow { animation: spinSlow 14s linear infinite; }
+.anim-blink { animation: blinkdot 2s ease-in-out infinite; }
+.anim-fog { animation: fogdrift 18s ease-in-out infinite; }
+.anim-rise { animation: riseIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.anim-spin-slow { animation: spinSlow 12s linear infinite; }
 
-.marquee-track { display: flex; width: max-content; animation: marquee 55s linear infinite; }
+.marquee-track { display: flex; width: max-content; animation: marquee 60s linear infinite; }
 
 .skeleton {
-  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.07) 50%, rgba(255,255,255,0.03) 75%);
+  background: linear-gradient(90deg, rgba(0,0,0,0.03) 25%, rgba(0,0,0,0.06) 50%, rgba(0,0,0,0.03) 75%);
   background-size: 400px 100%;
-  animation: shimmer 1.4s infinite linear;
+  animation: shimmer 1.5s infinite linear;
+}
+[data-theme="dark"] .skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.02) 25%, rgba(255,255,255,0.05) 50%, rgba(255,255,255,0.02) 75%);
+  background-size: 400px 100%;
 }
 
-.text-glow-amber { text-shadow: 0 0 26px rgba(245, 165, 36, 0.35); }
 .tabular { font-variant-numeric: tabular-nums; }
 
-/* consistent interaction feel — 120ms, no bounce */
-* { transition-property: none; }
-button, a, select, input, [role="button"] { transition-duration: 120ms; }
+/* Consistent smooth interaction feel */
+button, a, select, input, textarea, [role="button"] {
+  transition: all 140ms ease-out;
+}
 button:active:not(:disabled) { transform: translateY(0.5px); }
 button:disabled { cursor: not-allowed; }
 
 :focus-visible {
-  outline: 2px solid rgba(245, 165, 36, 0.5);
+  outline: 2px solid rgba(29, 78, 216, 0.5);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 6px;
+}
+[data-theme="dark"] :focus-visible {
+  outline-color: rgba(59, 130, 246, 0.5);
+}
+
+/* ─── Theme toggle transitions ─── */
+html {
+  transition: background-color 0.2s ease, color 0.2s ease;
 }

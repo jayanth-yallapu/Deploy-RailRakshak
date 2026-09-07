@@ -18,11 +18,11 @@ function haversineM(a: string, b: string): number {
 }
 
 const REJECT_REASONS = [
-  "Weld profile not within tolerance — re-grind required",
-  "Photo does not show completed work clearly",
-  "Tamping/packing incomplete at site",
-  "Incorrect component fitted — replace with sanctioned spec",
-  "Work location mismatch — GPS outside sanctioned chainage",
+  "Weld profile not within tolerance — re-grinding required",
+  "Photograph does not demonstrate completed repair clearly",
+  "Ballast packing / tamping incomplete at track site",
+  "Incorrect component fitted — replace with sanctioned IRS specification",
+  "Site coordinates outside sanctioned chainage",
 ];
 
 export default function BeforeAfterModal({
@@ -50,97 +50,114 @@ export default function BeforeAfterModal({
   const allClear = gpsOk && windowOk;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-abyss/80 p-4 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={onClose}>
       <div className="anim-rise w-full max-w-3xl overflow-hidden rounded-2xl border border-edge bg-hull shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-edge px-4 py-3">
+        <div className="flex items-center justify-between border-b border-edge px-5 py-4">
           <div>
-            <p className="font-mono text-[9px] uppercase tracking-widest text-faint">BEFORE vs AFTER — Digital sign-off review · Job #{job.id}</p>
-            <h3 className="mt-0.5 text-[13.5px] font-bold text-ink">{job.title}</h3>
-            <p className="mt-0.5 font-mono text-[9px] text-dim">{job.segmentCode} · {job.chainage} · {job.teamLeader}</p>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-bold text-amber-400">Job #{job.id}</span>
+              <h3 className="text-sm font-bold text-ink">{job.title}</h3>
+            </div>
+            <p className="mt-0.5 text-xs text-dim">
+              {job.segmentCode} · {job.chainage} · Assigned to {job.teamLeader}
+            </p>
           </div>
-          <button onClick={onClose} className="rounded-lg border border-edge p-1.5 text-dim hover:text-ink"><X size={15} /></button>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-dim hover:text-ink transition"><X size={16} /></button>
         </div>
 
-        {/* fraud banner */}
-        <div className={`flex items-center gap-2 border-b px-4 py-2 font-mono text-[9.5px] ${allClear ? "border-mint/20 bg-mint/[0.06] text-mint" : "border-signal/30 bg-signal/[0.08] text-signal"}`}>
-          {allClear ? <BadgeCheck size={13} /> : <AlertTriangle size={13} />}
-          {allClear ? "BOTH PHOTOS GPS + TIME VERIFIED — no fraud indicators" : "FRAUD FLAG — metadata mismatch detected, review carefully"}
+        {/* Anti-Fraud Validation Banner */}
+        <div className={`flex items-center gap-2 border-b px-5 py-2.5 text-xs font-semibold ${allClear ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" : "border-rose-500/30 bg-rose-500/10 text-rose-300"}`}>
+          {allClear ? <BadgeCheck size={16} className="text-emerald-400" /> : <AlertTriangle size={16} className="text-rose-400" />}
+          <span>{allClear ? "GPS & Timestamp Verified — Anti-Fraud Checks Passed" : "Warning: Metadata Discrepancy Detected"}</span>
         </div>
 
-        {/* split screen */}
-        <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+        {/* Photographic Evidence Split Screen */}
+        <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
           {[
-            { label: "BEFORE REPAIR", img: job.beforePhoto, gps: job.beforeGps, at: job.beforeAt, tone: "#ff9933" },
-            { label: "AFTER REPAIR", img: job.afterPhoto, gps: job.afterGps, at: job.afterAt, tone: "#34d399" },
+            { label: "BEFORE REPAIR (GPS STAMPED)", img: job.beforePhoto, gps: job.beforeGps, at: job.beforeAt, tone: "#f59e0b" },
+            { label: "AFTER REPAIR (GPS STAMPED)", img: job.afterPhoto, gps: job.afterGps, at: job.afterAt, tone: "#10b981" },
           ].map((p) => (
-            <div key={p.label} className="overflow-hidden rounded-xl border border-edge bg-black/40">
-              <div className="relative aspect-[4/3] w-full bg-edge/40">
+            <div key={p.label} className="overflow-hidden rounded-xl border border-edge bg-panel shadow-sm">
+              <div className="relative aspect-[4/3] w-full bg-black/40">
                 {p.img ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <SmartImg src={p.img} alt={p.label} className="h-full w-full object-cover" />
                 ) : (
-                  <div className="flex h-full items-center justify-center font-mono text-[10px] text-faint">NO PHOTO</div>
+                  <div className="flex h-full items-center justify-center text-xs text-faint">NO PHOTO CAPTURED</div>
                 )}
-                <span className="absolute left-2 top-2 rounded px-2 py-1 font-mono text-[9px] font-bold tracking-widest" style={{ background: "rgba(4,6,12,0.85)", color: p.tone }}>
+                <span className="absolute left-2.5 top-2.5 rounded-md px-2 py-1 text-[10px] font-bold tracking-wider" style={{ backgroundColor: "rgba(10, 14, 23, 0.85)", color: p.tone }}>
                   {p.label}
                 </span>
-                <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded bg-abyss/85 px-1.5 py-0.5 font-mono text-[8px] text-dim">
-                  <Camera size={8} /> GPS STAMPED
+                <span className="absolute bottom-2.5 right-2.5 flex items-center gap-1 rounded bg-slate-950/80 px-2 py-0.5 text-[9.5px] font-mono text-dim">
+                  <Camera size={9} /> GPS VERIFIED
                 </span>
               </div>
-              <div className="space-y-0.5 p-2.5 font-mono text-[8.5px] text-dim">
-                <p className="flex items-center gap-1"><MapPin size={8} /> {p.gps ?? "—"}</p>
-                <p>{p.at ? new Date(p.at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—"} IST</p>
+              <div className="space-y-1 p-3 text-xs text-dim">
+                <p className="flex items-center gap-1.5 font-mono"><MapPin size={11} className="text-amber-400" /> {p.gps ?? "—"}</p>
+                <p className="text-[11px] text-faint">{p.at ? new Date(p.at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "—"} IST</p>
               </div>
             </div>
           ))}
         </div>
 
-        {/* metadata checks */}
-        <div className="mx-4 space-y-1.5 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
-          <p className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-widest text-faint"><ShieldQuestion size={11} /> Anti-fraud verification</p>
-          <p className={`flex items-center gap-2 text-[10.5px] ${gpsOk ? "text-mint" : "text-signal"}`}>
-            <BadgeCheck size={11} /> BEFORE/AFTER GPS match — {gpsDelta} m apart (threshold 500 m)
-          </p>
-          <p className={`flex items-center gap-2 text-[10.5px] ${windowOk ? "text-mint" : "text-signal"}`}>
-            <BadgeCheck size={11} /> Completion inside sanctioned window {job.windowStart != null ? `${fmtMin(job.windowStart)}–${fmtMin(job.windowEnd ?? 0)}` : ""} — no early wrap-up
-          </p>
-          <p className="flex items-center gap-2 text-[10.5px] text-mint"><BadgeCheck size={11} /> Reporting photo chainage inside inspector beat (NDLS-I)</p>
+        {/* Verification Checks */}
+        <div className="mx-5 space-y-2 rounded-xl border border-edge bg-panel/50 p-4 text-xs text-dim">
+          <div className="flex items-center gap-1.5 font-semibold text-ink">
+            <ShieldQuestion size={14} className="text-amber-400" />
+            <span>Automated Anti-Fraud Checks</span>
+          </div>
+          <div className="space-y-1 pl-5">
+            <p className={`flex items-center gap-2 ${gpsOk ? "text-emerald-400" : "text-rose-400"}`}>
+              <BadgeCheck size={13} /> Before/After GPS Distance: {gpsDelta}m apart (Threshold: &lt; 500m)
+            </p>
+            <p className={`flex items-center gap-2 ${windowOk ? "text-emerald-400" : "text-rose-400"}`}>
+              <BadgeCheck size={13} /> Work completed within sanctioned window {job.windowStart != null ? `(${fmtMin(job.windowStart)}–${fmtMin(job.windowEnd ?? 0)})` : ""}
+            </p>
+            <p className="flex items-center gap-2 text-emerald-400">
+              <BadgeCheck size={13} /> Reporting chainage verified inside NDLS inspector beat
+            </p>
+          </div>
         </div>
 
-        {/* actions */}
-        <div className="mt-4 border-t border-edge p-4">
+        {/* Action Controls */}
+        <div className="mt-5 border-t border-edge p-5">
           {!rejecting ? (
             <div className="flex gap-3">
               <button
                 onClick={() => onDecide(true)}
                 disabled={busy || !allClear}
-                title={allClear ? "Sign off and release the block" : "Fraud flag raised — sign-off disabled until re-inspection"}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-mint to-[#2eb87f] px-4 py-3 font-mono text-[11px] font-bold uppercase tracking-widest text-abyss shadow-[0_0_24px_rgba(52,211,153,0.35)] transition enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-xs font-bold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400 disabled:opacity-40"
               >
-                <BadgeCheck size={15} /> {allClear ? "Accept & Sign-Off — Release Block" : "Sign-off blocked — fraud flag"}
+                <BadgeCheck size={16} /> {allClear ? "Accept Verification & Release Block" : "Sign-Off Blocked — Verification Flag"}
               </button>
               <button
                 onClick={() => setRejecting(true)}
-                className="rounded-xl border border-signal/40 bg-signal/10 px-4 py-3 font-mono text-[11px] font-bold uppercase tracking-widest text-signal transition hover:bg-signal/20"
+                className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-5 py-3 text-xs font-bold text-rose-400 transition hover:bg-rose-500/20"
               >
-                Reject
+                Reject Work
               </button>
             </div>
           ) : (
-            <div className="anim-rise space-y-2.5">
-              <select value={reason} onChange={(e) => setReason(e.target.value)} className="w-full rounded-lg border border-signal/40 bg-abyss px-3 py-2.5 font-mono text-[10.5px] text-ink outline-none">
+            <div className="anim-rise space-y-3">
+              <label className="block text-xs font-semibold text-dim">Select Reason for Rejection</label>
+              <select
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                className="w-full rounded-xl border border-rose-500/40 bg-panel px-3 py-2.5 text-xs font-medium text-ink outline-none"
+              >
                 {REJECT_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
               <div className="flex gap-2">
                 <button
                   onClick={() => onDecide(false, reason)}
                   disabled={busy}
-                  className="flex-1 rounded-xl bg-signal px-4 py-2.5 font-mono text-[10.5px] font-bold uppercase tracking-widest text-white transition hover:brightness-110 disabled:opacity-50"
+                  className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white shadow transition hover:bg-rose-500 disabled:opacity-50"
                 >
-                  Confirm rejection — re-allot crew
+                  Confirm Rejection & Re-assign Gang
                 </button>
-                <button onClick={() => setRejecting(false)} className="rounded-xl border border-edge px-4 py-2.5 font-mono text-[10.5px] text-dim">Back</button>
+                <button onClick={() => setRejecting(false)} className="rounded-xl border border-edge px-4 py-2.5 text-xs font-medium text-dim">
+                  Cancel
+                </button>
               </div>
             </div>
           )}

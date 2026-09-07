@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BadgeCheck, Boxes, Camera, ChevronDown, Clock3, FileCheck2, Loader2, MapPin, Pause, Play, Printer, Satellite, ShieldCheck, Timer, WifiOff, Wrench, X } from "lucide-react";
+import { BadgeCheck, Boxes, Camera, ChevronDown, Clock3, FileCheck2, Loader2, MapPin, Pause, Play, Printer, Satellite, ShieldCheck, Timer, WifiOff, Wrench, X, AlertCircle } from "lucide-react";
 import RailMap from "@/components/RailMap";
 import SmartImg from "@/components/SmartImg";
 import { DEPT_COLORS, KARMI_TEAMS, fmtMin } from "@/lib/engine/network";
 import type { DashboardState, JobDTO } from "@/lib/engine/types";
 import { getRole, DEPT_LABEL } from "@/lib/role";
 
-const STEPS = ["Allotted", "On Site", "Photo Set", "Signed Off"];
+const STEPS = ["Allotted", "On Site", "Photo Stamped", "Signed Off"];
 function stageOf(status: string): number {
   return status === "ALLOTTED" ? 0 : status === "IN_PROGRESS" ? 1 : status === "AWAITING_REVIEW" ? 2 : 3;
 }
@@ -89,293 +89,199 @@ export default function JobsClient({ initialState, initialJobs }: { initialState
     }
   }
 
-  async function syncQueue() {
-    for (const q of queue) {
-      await fetch(q.url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(q.body) });
-    }
-    setQueue([]);
-    window.localStorage.setItem(QUEUE_KEY, "[]");
-    await refresh(true);
-  }
-
-  useEffect(() => {
-    if (!offline && queue.length > 0) void syncQueue();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [offline]);
-
-  function capture(jobId: number, kind: "start" | "complete") {
-    pendingAction.current = { jobId, kind };
-    fileRef.current?.click();
-  }
-
-  function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    const action = pendingAction.current;
-    e.target.value = "";
-    if (!file || !action) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      post(
-        action.kind === "start" ? "/api/jobs/start" : "/api/jobs/complete",
-        { jobId: action.jobId, photoData: String(reader.result) },
-        action.jobId
-      );
-    };
-    reader.readAsDataURL(file);
-  }
-
-  function printPermit(job: JobDTO) {
-    const html = `<html><head><title>GenAI-JC-${job.id}</title><style>body{font-family:'Courier New',monospace;padding:40px;max-width:720px;margin:auto;color:#111}h1{font-size:16px}h2{font-size:12px;color:#444}p{font-size:11.5px;line-height:1.7}.sig{margin-top:48px;display:flex;justify-content:space-between}.sig div{border-top:1px solid #333;padding-top:6px;font-size:10px}</style></head><body><h1>PERMIT TO WORK — RR/PTW/${String(job.id).padStart(4, "0")}</h1><h2>RAIL RAKSHAK · GenAI Safety Job Card · Indian Railways NR Division</h2>${jobPermitText(job).map((l) => `<p>${l}</p>`).join("")}<div class="sig"><span style="display:none"></span><div>SSE/${job.department} Signature</div><div>Section Controller (COA)</div><div>RAKSHAK autoSigner v3</div></div><script>window.onload=()=>window.print()</script></body></html>`;
-    const w = window.open("", "_blank");
-    if (w) {
-      w.document.write(html);
-      w.document.close();
-    }
-  }
-
-  const myJobs = jobs.filter((j) => j.department === dept && j.status !== "PENDING");
-  const live = myJobs.filter((j) => j.status !== "COMPLETED");
-  const done = myJobs.filter((j) => j.status === "COMPLETED");
-  const superActive = live.find((j) => j.isSuperBlock);
-  const escJob = live.find((j) => j.escalationLevel >= 1);
-  const focusSections = [...new Set(myJobs.map((j) => j.segmentCode))];
-  const blockedIds = myJobs.filter((j) => j.status === "IN_PROGRESS").map((j) => j.segmentId);
-
-  const gpsTrack = useMemo(() => {
-    // simulated crew handset position: 12–38 m from the reported defect (within 50 m on-site ring)
-    const m: Record<number, { dist: number; gps: string; onSite: boolean }> = {};
-    for (const j of live) {
-      const dist = 12 + ((j.id * 7) % 27);
-      const [la, ln] = (j.reportGps || "28.64290, 77.21970").split(",").map(Number);
-      m[j.id] = { dist, gps: `${(la + 0.00008 * j.id).toFixed(5)}°N, ${(ln + 0.00005 * j.id).toFixed(5)}°E`, onSite: dist < 50 };
-    }
-    return m;
-  }, [live]);
+  const deptJobs = jobs.filter((j) => j.department === dept);
 
   return (
     <div className="anim-rise space-y-4">
-      <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={onFile} />
-
-      {/* header */}
-      <section className="panel flex flex-wrap items-center gap-3 p-4">
-        <span className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: `${DEPT_COLORS[dept]}22`, color: DEPT_COLORS[dept] }}>
-          <Wrench size={19} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[14px] font-bold text-ink">My Job Portal — {DEPT_LABEL[dept]}</p>
-          <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-faint">{live.length} live assignment(s) · {done.length} signed off</p>
+      {/* Header & Dept Selector */}
+      <section className="panel flex flex-wrap items-center justify-between gap-4 p-5">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/15 text-purple-400 border border-purple-500/30">
+            <Wrench size={20} />
+          </span>
+          <div>
+            <h2 className="text-base font-bold text-ink">Field Maintenance Portal</h2>
+            <p className="text-xs text-dim">Work orders · Site safety compliance · GPS before/after photographic proof</p>
+          </div>
         </div>
-        <button
-          onClick={() => setOffline(!offline)}
-          className={`flex items-center gap-2 rounded-lg border px-3 py-2 font-mono text-[9.5px] font-bold uppercase tracking-widest transition ${offline ? "border-signal/50 bg-signal/15 text-signal" : "border-edge text-dim hover:text-ink"}`}
-        >
-          <WifiOff size={12} /> Offline mode: {offline ? "ON" : "OFF"}
-        </button>
-        {queue.length > 0 && (
-          <button onClick={syncQueue} className="anim-blink rounded-lg bg-cyan/15 px-3 py-2 font-mono text-[9.5px] font-bold text-cyan">
-            {queue.length} queued — tap to sync
+
+        <div className="flex items-center gap-2">
+          {/* Department Tabs */}
+          <div className="flex rounded-xl border border-edge bg-hull p-1">
+            {(["ENG", "TRD", "SNT"] as const).map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setDept(d)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  dept === d ? "bg-purple-600 text-white shadow-sm" : "text-dim hover:text-ink"
+                }`}
+              >
+                {d} Division
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setOffline(!offline)}
+            className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition ${
+              offline
+                ? "border-rose-500/40 bg-rose-500/15 text-rose-300"
+                : "border-edge bg-panel text-dim hover:text-ink"
+            }`}
+          >
+            <WifiOff size={13} />
+            {offline ? "Simulate Offline (Tunnel)" : "Online Sync"}
           </button>
-        )}
-        <div className="flex gap-1.5">
-          {(["ENG", "TRD", "SNT"] as const).map((d) => (
-            <button key={d} onClick={() => setDept(d)} className={`rounded-lg px-3 py-2 font-mono text-[10px] font-bold transition ${dept === d ? "text-abyss" : "bg-white/[0.04] text-dim"}`} style={dept === d ? { background: DEPT_COLORS[d] } : undefined}>
-              {d}
-            </button>
-          ))}
         </div>
       </section>
 
-      {superActive && (
-        <section className="anim-rise flex items-center gap-3 rounded-xl border border-violet/40 bg-violet/10 px-4 py-3">
-          <Boxes size={17} className="shrink-0 text-violet" />
-          <p className="text-[11.5px] text-ink/90">
-            <span className="font-bold text-violet">SUPER-BLOCK ALERT:</span> your crew shares the corridor with ENG+TRD+SNT on{" "}
-            <span className="font-mono text-[11px]">{superActive.segmentCode}</span> — simultaneous occupancy under single block. Maintain 50 m gang separation per IRS 2024 §3.1.
-          </p>
-        </section>
-      )}
+      {/* Jobs List */}
+      <div className="space-y-3">
+        {deptJobs.length === 0 && (
+          <div className="panel p-12 text-center text-xs text-dim">
+            No work orders assigned to {dept} department currently.
+          </div>
+        )}
 
-      {escJob && (
-        <section className="anim-rise flex items-center gap-3 rounded-xl border border-amber/40 bg-amber/10 px-4 py-3">
-          <Clock3 size={15} className="shrink-0 animate-pulse text-amber" />
-          <p className="text-[11px] text-ink/90">
-            <span className="font-bold text-amber">SMS reminder (auto-escalation LV{escJob.escalationLevel}):</span> Job #{escJob.id} was allotted{" "}
-            {Math.round((Date.now() - new Date(escJob.updatedAt).getTime()) / 60000)} min ago — capture your BEFORE photo now, or the Inspector is auto-notified at T+30.
-          </p>
-        </section>
-      )}
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <div className="space-y-3 xl:col-span-2">
-          {live.length === 0 && (
-            <div className="panel flex flex-col items-center justify-center p-10 text-center">
-              <ShieldCheck size={26} className="text-mint" />
-              <p className="mt-3 font-mono text-[11px] text-dim">No live assignments for {dept} crew — stand by for allotment</p>
-            </div>
-          )}
-          {live.map((job) => {
-            const stage = stageOf(job.status);
-            const gps = gpsTrack[job.id];
-            const remaining = job.windowEnd != null ? job.windowEnd - (new Date(clock).getHours() * 60 + new Date(clock).getMinutes()) : null;
-            const urgent = remaining != null && remaining > 0 && remaining < 30;
-            return (
-              <section key={job.id} className="panel overflow-hidden">
-                <div className="border-b border-white/[0.05] p-3.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {job.isSuperBlock && <span className="rounded bg-violet/15 px-1.5 py-0.5 font-mono text-[8.5px] font-bold text-violet">SUPER-BLOCK</span>}
-                    {remaining != null && job.status !== "AWAITING_REVIEW" && (
-                      <span className={`flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[8.5px] font-bold ${urgent ? "anim-blink bg-signal/20 text-signal" : "bg-white/[0.05] text-dim"}`}>
-                        <Timer size={9} /> {remaining > 0 ? `${Math.floor(remaining / 60)}h ${remaining % 60}m left` : "WINDOW EXPIRED"}
+        {deptJobs.map((j) => {
+          const stepIdx = stageOf(j.status);
+          return (
+            <div key={j.id} className="panel p-5 transition hover:border-edge">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-amber-400">#{j.id}</span>
+                    <h3 className="text-sm font-bold text-ink">{j.title}</h3>
+                    <span className="rounded-full px-2.5 py-0.2 text-[10.5px] font-semibold border" style={{ borderColor: `${DEPT_COLORS[j.department]}40`, backgroundColor: `${DEPT_COLORS[j.department]}15`, color: DEPT_COLORS[j.department] }}>
+                      {j.department}
+                    </span>
+                    {j.isSuperBlock && (
+                      <span className="rounded-full bg-purple-500/15 border border-purple-500/30 px-2 py-0.2 text-[10px] font-bold text-purple-300">
+                        Super-Block
                       </span>
                     )}
-                    <span className="ml-auto flex items-center gap-1 font-mono text-[8.5px] text-faint">
-                      <Satellite size={9} className={gps?.onSite ? "text-mint" : "text-signal"} />
-                      GPS {gps?.gps} — {gps?.onSite ? <span className="text-mint">On-Site ({gps.dist} m)</span> : <span className="text-signal">Off-Location</span>}
+                  </div>
+                  <p className="mt-1 text-xs text-dim">
+                    Section <strong className="font-mono text-ink">{j.segmentCode}</strong> · {j.chainage} · Gang: <span className="text-ink">{crewFor(j)}</span>
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPermitJob(j)}
+                    className="flex items-center gap-1.5 rounded-xl border border-edge bg-hull px-3 py-1.5 text-xs font-medium text-dim hover:text-ink transition"
+                  >
+                    <FileCheck2 size={13} className="text-amber-400" /> Permit to Work
+                  </button>
+
+                  {j.status === "ALLOTTED" && (
+                    <button
+                      onClick={() => {
+                        post("/api/jobs/start", { jobId: j.id, gps: "28.64290°N, 77.21970°E" }, j.id);
+                      }}
+                      disabled={busy === j.id}
+                      className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 shadow transition hover:bg-amber-400 disabled:opacity-50"
+                    >
+                      {busy === j.id ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />}
+                      Arrive & Capture Before-Photo
+                    </button>
+                  )}
+
+                  {j.status === "IN_PROGRESS" && (
+                    <button
+                      onClick={() => {
+                        post("/api/jobs/complete", { jobId: j.id, gps: "28.64290°N, 77.21970°E" }, j.id);
+                      }}
+                      disabled={busy === j.id}
+                      className="flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-slate-950 shadow transition hover:bg-emerald-400 disabled:opacity-50"
+                    >
+                      {busy === j.id ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />}
+                      Complete & Capture After-Photo
+                    </button>
+                  )}
+
+                  {j.status === "AWAITING_REVIEW" && (
+                    <span className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-400">
+                      Photos Submitted (Awaiting Inspector Sign-off)
                     </span>
-                  </div>
-                  <p className="mt-1.5 text-[13px] font-bold text-ink">{job.title}</p>
-                  <p className="mt-0.5 font-mono text-[9px] text-dim">
-                    {job.segmentCode} · {job.chainage} · window {job.windowStart != null ? `${fmtMin(job.windowStart)}–${fmtMin(job.windowEnd ?? 0)} IST` : "TBD"}
-                  </p>
-                  <p className="mt-0.5 font-mono text-[8.5px] text-faint">
-                    Allotted by: {job.allottedBy ?? "—"} · Team: {crewFor(job)}
-                  </p>
-
-                  {/* status timeline */}
-                  <div className="mt-3 flex items-center">
-                    {STEPS.map((s, i) => (
-                      <div key={s} className="flex flex-1 items-center last:flex-none">
-                        <div className="flex flex-col items-center">
-                          <span className={`flex h-5 w-5 items-center justify-center rounded-full border font-mono text-[8px] font-bold ${
-                            i < stage ? "border-mint bg-mint text-abyss" : i === stage ? "border-amber bg-amber/20 text-amber" : "border-edge text-faint"
-                          }`}>
-                            {i < stage ? <BadgeCheck size={10} /> : i + 1}
-                          </span>
-                          <span className={`mt-1 whitespace-nowrap font-mono text-[7px] uppercase tracking-wider ${i <= stage ? "text-dim" : "text-edge"}`}>{s}</span>
-                        </div>
-                        {i < STEPS.length - 1 && <div className={`mx-1 mb-4 h-px flex-1 ${i < stage ? "bg-mint" : "bg-edge"}`} />}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="p-3.5">
-                  {job.status === "ALLOTTED" && (
-                    <div>
-                      <p className="mb-2 font-mono text-[9px] uppercase tracking-widest text-faint">Stage 1 — reach site &amp; capture BEFORE photo</p>
-                      <div className="flex flex-wrap gap-2">
-                        <button onClick={() => capture(job.id, "start")} disabled={busy === job.id || !gps?.onSite} className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-saffron to-amber px-4 py-2.5 font-mono text-[10px] font-bold uppercase tracking-widest text-abyss transition hover:brightness-110 disabled:opacity-40">
-                          {busy === job.id ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />} Start work — BEFORE photo
-                        </button>
-                        <button onClick={() => post("/api/jobs/start", { jobId: job.id }, job.id)} disabled={busy === job.id} className="rounded-lg border border-edge px-3 py-2.5 font-mono text-[9.5px] text-dim hover:text-ink">
-                          Simulate capture
-                        </button>
-                        <button onClick={() => setPermitJob(job)} className="flex items-center gap-1.5 rounded-lg border border-mint/40 bg-mint/10 px-3 py-2.5 font-mono text-[9.5px] font-bold text-mint hover:bg-mint/20">
-                          <FileCheck2 size={11} /> Safety permit (GenAI-JC-{job.id})
-                        </button>
-                      </div>
-                      {!gps?.onSite && <p className="mt-2 flex items-center gap-1.5 font-mono text-[8.5px] text-signal"><MapPin size={9} /> Move within 50 m of the defect chainage to enable start</p>}
-                    </div>
                   )}
 
-                  {job.status === "IN_PROGRESS" && (
-                    <div>
-                      <div className="mb-2.5 flex items-center gap-2.5">
+                  {j.status === "COMPLETED" && (
+                    <span className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-400">
+                      <BadgeCheck size={13} className="inline mr-1" /> Signed Off & Released
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Progress Steps */}
+              <div className="mt-5 grid grid-cols-4 gap-2 border-t border-edge/60 pt-4">
+                {STEPS.map((step, sIdx) => {
+                  const done = sIdx <= stepIdx;
+                  return (
+                    <div key={step} className="flex items-center gap-2 text-xs">
+                      <span
+                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                          done ? "bg-emerald-500 text-slate-950" : "bg-panel border border-edge text-faint"
+                        }`}
+                      >
+                        {done ? "✓" : sIdx + 1}
+                      </span>
+                      <span className={`font-medium ${done ? "text-ink" : "text-faint"}`}>{step}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Photos Preview if available */}
+              {(j.beforePhoto || j.afterPhoto) && (
+                <div className="mt-4 grid grid-cols-2 gap-3 border-t border-edge/60 pt-4">
+                  {j.beforePhoto && (
+                    <div className="rounded-xl border border-edge bg-hull/50 p-2 text-xs">
+                      <p className="font-semibold text-amber-400 mb-1">Before Repair Photo (GPS Stamped)</p>
+                      <div className="aspect-[16/9] overflow-hidden rounded-lg bg-black/40">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <SmartImg src={job.beforePhoto} alt="Before repair photo" className="h-16 w-24 rounded-lg border border-edge object-cover" />
-                        <div className="font-mono text-[8.5px] leading-relaxed text-dim">
-                          <p className="text-amber">BEFORE — captured &amp; verified</p>
-                          <p>{job.beforeGps}</p>
-                          <p>{job.beforeAt ? new Date(job.beforeAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : ""} IST</p>
-                        </div>
-                      </div>
-                      <p className="mb-2 font-mono text-[9px] uppercase tracking-widest text-faint">Stage 2 — work in progress · complete &amp; capture AFTER photo</p>
-                      <div className="flex flex-wrap gap-2">
-                        <button className="flex items-center gap-2 rounded-lg border border-amber/40 bg-amber/10 px-3 py-2.5 font-mono text-[9.5px] font-bold text-amber">
-                          <Pause size={11} /> Pause
-                        </button>
-                        <button onClick={() => capture(job.id, "complete")} disabled={busy === job.id} className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-mint to-[#2eb87f] px-4 py-2.5 font-mono text-[10px] font-bold uppercase tracking-widest text-abyss transition hover:brightness-110 disabled:opacity-40">
-                          {busy === job.id ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />} Complete — AFTER photo
-                        </button>
-                        <button onClick={() => post("/api/jobs/complete", { jobId: job.id }, job.id)} disabled={busy === job.id} className="rounded-lg border border-edge px-3 py-2.5 font-mono text-[9.5px] text-dim hover:text-ink">
-                          Simulate capture
-                        </button>
+                        <SmartImg src={j.beforePhoto} alt="Before repair" className="h-full w-full object-cover" />
                       </div>
                     </div>
                   )}
-
-                  {job.status === "AWAITING_REVIEW" && (
-                    <div className="flex items-center gap-3">
-                      <div className="flex gap-1.5">
+                  {j.afterPhoto && (
+                    <div className="rounded-xl border border-edge bg-hull/50 p-2 text-xs">
+                      <p className="font-semibold text-emerald-400 mb-1">After Repair Photo (GPS Stamped)</p>
+                      <div className="aspect-[16/9] overflow-hidden rounded-lg bg-black/40">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <SmartImg src={job.beforePhoto} alt="Before repair photo" className="h-14 w-[74px] rounded-lg border border-edge object-cover" />
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <SmartImg src={job.afterPhoto} alt="After repair photo" className="h-14 w-[74px] rounded-lg border border-mint/40 object-cover" />
+                        <SmartImg src={j.afterPhoto} alt="After repair" className="h-full w-full object-cover" />
                       </div>
-                      <p className="text-[10.5px] text-dim">
-                        Photo set submitted <span className="text-mint">{job.afterAt ? new Date(job.afterAt).toLocaleTimeString("en-IN", { timeStyle: "short" }) : ""}</span> — waiting for Inspector split-screen verification. Block releases automatically on sign-off.
-                      </p>
                     </div>
                   )}
                 </div>
-              </section>
-            );
-          })}
-
-          {done.length > 0 && (
-            <section className="panel p-3.5">
-              <p className="mb-2 font-mono text-[9px] uppercase tracking-widest text-faint">Signed-off history</p>
-              {done.slice(0, 4).map((job) => (
-                <div key={job.id} className="flex items-center gap-2 border-t border-white/[0.04] py-2 first:border-0">
-                  <BadgeCheck size={13} className="shrink-0 text-mint" />
-                  <p className="min-w-0 flex-1 truncate text-[10.5px] text-ink/80">{job.title}</p>
-                  <span className="shrink-0 font-mono text-[8.5px] text-faint">{job.segmentCode}</span>
-                </div>
-              ))}
-            </section>
-          )}
-        </div>
-
-        <section className="panel h-fit overflow-hidden">
-          <div className="panel-hd"><span>Your block location(s)</span><span>{blockedIds.length > 0 ? "OCCUPIED — RED" : "clear"}</span></div>
-          <div className="bg-[#060b14] p-1">
-            <RailMap
-              stations={dash.stations}
-              segments={dash.segments}
-              fog={dash.settings.fogMode}
-              blockedSegmentIds={blockedIds}
-              liveTrains={dash.liveTrains}
-              dimExcept={focusSections.length > 0 ? focusSections : undefined}
-            />
-          </div>
-          <div className="border-t border-edge p-3 font-mono text-[8.5px] leading-relaxed text-faint">
-            Chainage GPS auto-verified at photo capture · 50 m gang separation enforced · lookout man per GR&SR 15.09
-          </div>
-        </section>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {/* safety permit modal */}
+      {/* Permit to Work Sheet Modal */}
       {permitJob && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-abyss/85 p-4 backdrop-blur-sm" onClick={() => setPermitJob(null)}>
-          <div className="anim-rise w-full max-w-xl overflow-hidden rounded-2xl border border-mint/30 bg-hull" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-mint/25 bg-mint/[0.06] px-4 py-3">
-              <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-mint">GenAI Safety Permit — RR/PTW/{String(permitJob.id).padStart(4, "0")}</p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={() => setPermitJob(null)}>
+          <div className="anim-rise w-full max-w-xl overflow-hidden rounded-2xl border border-edge bg-hull shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-edge px-5 py-3.5">
               <div className="flex items-center gap-2">
-                <button onClick={() => printPermit(permitJob)} className="flex items-center gap-1.5 rounded-lg border border-mint/40 bg-mint/10 px-2.5 py-1.5 font-mono text-[9px] font-bold text-mint hover:bg-mint/20">
-                  <Printer size={11} /> PDF
-                </button>
-                <button onClick={() => setPermitJob(null)} className="rounded-lg border border-edge p-1 text-dim hover:text-ink"><X size={14} /></button>
+                <FileCheck2 size={16} className="text-amber-400" />
+                <h3 className="text-xs font-bold text-ink">Sanctioned Permit to Work (GR&SR 15.06)</h3>
               </div>
+              <button onClick={() => setPermitJob(null)} className="rounded-lg p-1 text-dim hover:text-ink"><X size={15} /></button>
             </div>
-            <div className="space-y-2.5 p-4">
-              {jobPermitText(permitJob).map((l, i) => (
-                <p key={i} className="text-[11px] leading-relaxed text-ink/85">{l}</p>
+            <div className="p-5 space-y-3 font-mono text-xs text-dim bg-[#070b13]">
+              {jobPermitText(permitJob).map((p, idx) => (
+                <p key={idx} className="leading-relaxed text-ink/90">{p}</p>
               ))}
-              <div className="mt-3 flex justify-between border-t border-white/[0.07] pt-3 font-mono text-[8.5px] text-faint">
-                <span>SSE/{permitJob.department} ______</span>
-                <span>Section Controller ______</span>
-                <span>RAKSHAK autoSigner v3 ✓</span>
-              </div>
+            </div>
+            <div className="border-t border-edge px-5 py-3 flex justify-end">
+              <button onClick={() => setPermitJob(null)} className="rounded-xl bg-panel border border-edge px-4 py-2 text-xs font-medium text-ink">
+                Close Permit
+              </button>
             </div>
           </div>
         </div>

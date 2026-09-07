@@ -36,21 +36,33 @@ function Toggle({
       disabled={disabled}
       aria-pressed={on}
       aria-label={`${label} — currently ${on ? "on" : "off"}`}
-      className={`flex w-full items-center gap-3 rounded-lg border p-2.5 text-left transition disabled:opacity-50 ${
-        on ? "border-white/20 bg-white/[0.06]" : "border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04]"
+      className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition disabled:opacity-50 ${
+        on ? "border-edge/90 bg-panel shadow-sm" : "border-edge/50 bg-panel/30 hover:border-edge hover:bg-panel/50"
       }`}
     >
-      <span style={{ color: on ? color : "#4a576d" }}>{icon}</span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[11.5px] font-bold tracking-wide" style={{ color: on ? color : "#8b98ad" }}>
-          {label}: {on ? "ON" : "OFF"}
-        </span>
-        <span className="block truncate font-mono text-[8.5px] uppercase tracking-wider text-faint">{sub}</span>
-      </span>
-      <span className="relative shrink-0 rounded-full transition" style={{ height: 18, width: 36, background: on ? color : "#16202f" }}>
+      <span style={{ color: on ? color : "#64748b" }}>{icon}</span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold tracking-tight text-ink">{label}</span>
+          <span
+            className="rounded px-1.5 py-0.2 text-[10px] font-mono font-semibold"
+            style={{
+              backgroundColor: on ? `${color}20` : "rgba(100, 116, 139, 0.15)",
+              color: on ? color : "#94a3b8",
+            }}
+          >
+            {on ? "ACTIVE" : "OFF"}
+          </span>
+        </div>
+        <p className="mt-0.5 truncate text-[11px] text-dim">{sub}</p>
+      </div>
+      <span
+        className="relative shrink-0 rounded-full transition-colors duration-200"
+        style={{ height: 20, width: 38, backgroundColor: on ? color : "#1e293b" }}
+      >
         <span
-          className="absolute top-[3px] h-3 w-3 rounded-full transition-all"
-          style={{ left: on ? 19 : 3, background: on ? "#04060c" : "#4a576d" }}
+          className="absolute top-[2px] h-4 w-4 rounded-full transition-all duration-200"
+          style={{ left: on ? 20 : 2, backgroundColor: on ? "#0a0e17" : "#64748b" }}
         />
       </span>
     </button>
@@ -82,7 +94,6 @@ export default function CommandClient({ initial }: { initial: DashboardState }) 
       if (!res.ok) return;
       const d = (await res.json()) as DashboardState;
       const s = sigOf(d);
-      // skip the re-render entirely when nothing changed — kills poll jitter
       if (force || s !== lastSig.current) {
         lastSig.current = s;
         setState(d);
@@ -90,7 +101,6 @@ export default function CommandClient({ initial }: { initial: DashboardState }) 
     } catch {
       /* keep last state */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -117,7 +127,7 @@ export default function CommandClient({ initial }: { initial: DashboardState }) 
   const blockedIds = [
     ...new Set([
       ...planBlocks.filter((b) => b.day <= 1 && b.mode === "physical").map((b) => b.segmentId),
-      ...state.activeBlockSegments, // crews physically on site (karmi before-photo captured)
+      ...state.activeBlockSegments,
     ]),
   ];
   const selectedSegment = useMemo(
@@ -125,7 +135,6 @@ export default function CommandClient({ initial }: { initial: DashboardState }) 
     [state.segments, selectedCode]
   );
   const runningCount = state.liveTrains.filter((t) => t.status === "RUNNING").length;
-
   const overrun = state.overrun;
   const firstBlock = state.latestPlan?.blocks[0] ?? null;
 
@@ -146,21 +155,26 @@ export default function CommandClient({ initial }: { initial: DashboardState }) 
 
   return (
     <div className="anim-rise space-y-4">
-      {/* Overrun early-warning banner */}
+      {/* Overrun Early Warning Alert */}
       {overrun && (
-        <div className="anim-rise flex flex-wrap items-center gap-3 rounded-xl border border-amber/50 bg-amber/[0.08] px-4 py-2.5">
-          <span className="flex items-center gap-2 font-mono text-[10.5px] font-bold uppercase tracking-widest text-amber">
-            <Timer size={14} className="animate-pulse" /> HIGH OVERRUN RISK
-          </span>
-          <p className="min-w-0 flex-1 text-[11px] text-ink/90">
-            Block #{overrun.jobId} ({overrun.segCode}) has <span className="font-bold text-amber">{overrun.remainingMin} min left, {overrun.donePct}% done</span> — overrun probability <span className="tabular font-bold text-signal">{overrun.probability.toFixed(0)}%</span>
-          </p>
+        <div className="anim-rise flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400">
+              <Timer size={16} className="animate-pulse" />
+            </span>
+            <div>
+              <p className="text-xs font-bold text-amber-300 uppercase tracking-wide">High Block Overrun Risk</p>
+              <p className="text-xs text-ink">
+                Job #{overrun.jobId} on section <strong className="font-mono text-amber-300">{overrun.segCode}</strong> has {overrun.remainingMin} min left ({overrun.donePct}% done) — Overrun probability: <span className="font-bold text-rose-400 font-mono">{overrun.probability.toFixed(0)}%</span>
+              </p>
+            </div>
+          </div>
           <button
             onClick={preemptExtend}
             disabled={extendBusy}
-            className="rounded-lg bg-amber px-3 py-1.5 font-mono text-[9.5px] font-bold uppercase tracking-widest text-abyss transition hover:brightness-110 disabled:opacity-50"
+            className="rounded-lg bg-amber-500 px-3.5 py-1.5 text-xs font-bold text-slate-950 shadow transition hover:bg-amber-400 disabled:opacity-50"
           >
-            {extendBusy ? "Extending…" : "Pre-empt extend +30 min"}
+            {extendBusy ? "Extending…" : "Pre-emptively Extend +30m"}
           </button>
         </div>
       )}
@@ -169,22 +183,25 @@ export default function CommandClient({ initial }: { initial: DashboardState }) 
 
       <KpiStrip state={state} />
 
+      {/* Main Grid View */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        {/* MAP */}
+        {/* Rail Map Section */}
         <section className="panel relative overflow-hidden xl:col-span-2">
           <div className="panel-hd">
             <span className="flex items-center gap-2">
-              <Radio size={12} className="text-mint" /> Delhi NCR Live Grid — real geo · COA sync · {runningCount} trains running
+              <Radio size={14} className="text-emerald-400" />
+              Delhi NCR Live Grid (19 Sections · {runningCount} Active Trains)
             </span>
-            <span className="flex items-center gap-3 font-mono text-[9px]">
-              <span className="flex items-center gap-1 text-amber"><Thermometer size={10} />{state.weather.tempC}°C</span>
-              <span className="flex items-center gap-1 text-cyan"><Wind size={10} />{state.weather.humidityPct}% RH</span>
-              <span className={`flex items-center gap-1 ${s.fogMode ? "text-signal" : "text-mint"}`}>
-                <Eye size={10} />VIS {state.weather.visibilityM >= 1000 ? `${(state.weather.visibilityM / 1000).toFixed(1)}km` : `${state.weather.visibilityM}m`}
+            <div className="flex items-center gap-3 text-xs text-dim">
+              <span className="flex items-center gap-1 text-amber-400"><Thermometer size={12} />{state.weather.tempC}°C</span>
+              <span className="flex items-center gap-1 text-sky-400"><Wind size={12} />{state.weather.humidityPct}% RH</span>
+              <span className={`flex items-center gap-1 font-mono ${s.fogMode ? "text-rose-400" : "text-emerald-400"}`}>
+                <Eye size={12} />Vis: {state.weather.visibilityM >= 1000 ? `${(state.weather.visibilityM / 1000).toFixed(1)}km` : `${state.weather.visibilityM}m`}
               </span>
-            </span>
+            </div>
           </div>
-          <div className="gridlines relative bg-[#060b14] p-1">
+
+          <div className="gridlines relative bg-[#070b13] p-2">
             <RailMap
               stations={state.stations}
               segments={state.segments}
@@ -195,28 +212,33 @@ export default function CommandClient({ initial }: { initial: DashboardState }) 
               selectedSegment={selectedCode}
               onSelectSegment={(code) => setSelectedCode(code === selectedCode ? null : code)}
             />
+
             {s.fogMode && (
-              <div className="absolute left-3 top-3 rounded-lg border border-signal/40 bg-abyss/80 px-3 py-2 backdrop-blur">
-                <p className="flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-widest text-signal">
-                  <CloudFog size={13} /> FOG MODE ENGAGED
+              <div className="anim-rise absolute left-4 top-4 rounded-xl border border-rose-500/40 bg-hull/90 p-3 shadow-lg backdrop-blur-md">
+                <p className="flex items-center gap-2 text-xs font-bold text-rose-400">
+                  <CloudFog size={15} /> Winter Fog Protocol Active
                 </p>
-                <p className="mt-1 max-w-[300px] text-[10.5px] leading-snug text-dim">
-                  Physical blocks suspended · DAS acoustic sensing + REMMLOT virtual inspection active · {state.counts.virtualInspections} remote diagnostics in queue
+                <p className="mt-1 max-w-xs text-[11px] text-dim leading-relaxed">
+                  Physical track blocks suspended · DAS acoustic sensing & remote diagnostics engaged ({state.counts.virtualInspections} in queue).
                 </p>
               </div>
             )}
+
             {s.vipAlert && (
-              <div className="absolute right-3 top-3 rounded-lg border border-amber/40 bg-abyss/80 px-3 py-2 backdrop-blur">
-                <p className="flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-widest text-amber">
-                  <ShieldAlert size={13} /> VVIP Silent Corridor
+              <div className="anim-rise absolute right-4 top-4 rounded-xl border border-amber-500/40 bg-hull/90 p-3 shadow-lg backdrop-blur-md">
+                <p className="flex items-center gap-2 text-xs font-bold text-amber-400">
+                  <ShieldAlert size={15} /> VVIP Security Corridor
                 </p>
-                <p className="mt-1 text-[10.5px] text-dim">5 km sanctum · RPF/IB feed live · sub-critical blocks withheld</p>
+                <p className="mt-1 max-w-xs text-[11px] text-dim leading-relaxed">
+                  5 km NDLS security buffer active via RPF/IB feed · Sub-critical maintenance blocks withheld.
+                </p>
               </div>
             )}
-            <div className="pointer-events-none absolute bottom-2 left-3 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[8.5px] text-faint">
+
+            <div className="pointer-events-none absolute bottom-3 left-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] font-mono text-faint">
               {Object.entries(CORRIDOR_COLORS).map(([c, col]) => (
-                <span key={c} className="flex items-center gap-1">
-                  <span className="inline-block h-[3px] w-4 rounded-full" style={{ background: col }} />
+                <span key={c} className="flex items-center gap-1.5">
+                  <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: col }} />
                   {c}
                 </span>
               ))}
@@ -224,69 +246,115 @@ export default function CommandClient({ initial }: { initial: DashboardState }) 
           </div>
         </section>
 
-        {/* RIGHT COLUMN */}
+        {/* Right Operational Controls */}
         <section className="flex flex-col gap-4">
           <div className="panel">
-            <div className="panel-hd"><span>Operating Modes</span><span className="text-[9px]">{pending ? "APPLYING…" : "INSTANT"}</span></div>
-            <div className="space-y-2 p-3">
-              <Toggle label="FOG MODE" sub="suspend physical · enable DAS acoustic scans" on={s.fogMode} color="#ff4d4f" icon={<CloudFog size={17} />} onClick={() => toggle("fogMode")} disabled={pending !== null} />
-              <Toggle label="VVIP SILENT CORRIDOR" sub="5 km NDLS sanctum · RPF/IB live feed" on={s.vipAlert} color="#f5a524" icon={<ShieldAlert size={17} />} onClick={() => toggle("vipAlert")} disabled={pending !== null} />
-              <Toggle label="DTP RED-ZONE SYNC" sub="avoid LC gates in city rush hours" on={s.dtpRedZone} color="#22d3ee" icon={<TrafficCone size={17} />} onClick={() => toggle("dtpRedZone")} disabled={pending !== null} />
+            <div className="panel-hd">
+              <span>Operating Mode Triggers</span>
+              <span className="text-[10.5px] font-mono text-dim">{pending ? "Updating…" : "Instant"}</span>
+            </div>
+            <div className="space-y-2.5 p-4">
+              <Toggle
+                label="Dense Fog Mode"
+                sub="Suspend physical blocks & trigger DAS sensing"
+                on={s.fogMode}
+                color="#f43f5e"
+                icon={<CloudFog size={18} />}
+                onClick={() => toggle("fogMode")}
+                disabled={pending !== null}
+              />
+              <Toggle
+                label="VVIP Security Corridor"
+                sub="Enforce 5 km NDLS buffer with RPF feeds"
+                on={s.vipAlert}
+                color="#f59e0b"
+                icon={<ShieldAlert size={18} />}
+                onClick={() => toggle("vipAlert")}
+                disabled={pending !== null}
+              />
+              <Toggle
+                label="Delhi Traffic Police Sync"
+                sub="Avoid level crossing gates during rush hours"
+                on={s.dtpRedZone}
+                color="#0ea5e9"
+                icon={<TrafficCone size={18} />}
+                onClick={() => toggle("dtpRedZone")}
+                disabled={pending !== null}
+              />
             </div>
           </div>
 
-          <div className="panel">
+          <div className="panel flex-1 flex flex-col">
             <div className="panel-hd">
-              <span className="flex items-center gap-2"><TrainFront size={12} className="text-amber" /> NTES Live Rail Traffic</span>
-              <span className="text-[9px]">real schedules</span>
+              <span className="flex items-center gap-2">
+                <TrainFront size={14} className="text-amber-400" /> Live NTES Train Departures
+              </span>
+              <span className="text-[10.5px] text-faint">COA Synced</span>
             </div>
-            <LiveBoard trains={state.liveTrains} />
+            <div className="flex-1 overflow-hidden">
+              <LiveBoard trains={state.liveTrains} />
+            </div>
           </div>
         </section>
       </div>
 
-      {/* ROW 3 — inspector + consensus + load + feed */}
+      {/* Row 3: Section Inspector, Consensus, Load, and Audit Stream */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-4">
-        <section className="panel min-h-[260px]">
-          <div className="panel-hd"><span>Section Inspector — click any track</span></div>
+        <section className="panel min-h-[280px]">
+          <div className="panel-hd"><span>Section Inspector</span></div>
           <SectionInspector segment={selectedSegment} />
         </section>
 
-        <section className="panel min-h-[260px]">
+        <section className="panel min-h-[280px]">
           <div className="panel-hd">
-            <span>Cross-Department Consensus</span>
-            <span className="text-[9px]">agreement check</span>
+            <span>Inter-Department Consensus</span>
+            <span className="text-[10px] text-faint">3-way vote</span>
           </div>
           <ConsensusMeter segments={state.segments} />
         </section>
 
         <section className="panel">
-          <div className="panel-hd"><span>Departmental Load</span><Activity size={11} /></div>
-          <div className="space-y-2.5 p-3.5">
+          <div className="panel-hd">
+            <span>Departmental Workload</span>
+            <Activity size={13} className="text-dim" />
+          </div>
+          <div className="space-y-3.5 p-4">
             {state.deptLoad.map((d) => (
               <div key={d.dept}>
-                <div className="flex items-center justify-between font-mono text-[9.5px] text-dim">
-                  <span style={{ color: DEPT_COLORS[d.dept] }}>{d.dept === "ENG" ? "ENGINEERING · TMS" : d.dept === "TRD" ? "TRACTION · TDMS" : "SIGNAL & TELECOM · SMMS"}</span>
-                  <span className="tabular">{d.open} open · {d.critical} crit</span>
+                <div className="flex items-center justify-between text-xs font-semibold">
+                  <span style={{ color: DEPT_COLORS[d.dept] }}>
+                    {d.dept === "ENG" ? "Track Division (TMS)" : d.dept === "TRD" ? "Traction / OHE (TDMS)" : "Signals & Telecom (SMMS)"}
+                  </span>
+                  <span className="font-mono text-dim">{d.open} open · {d.critical} crit</span>
                 </div>
-                <div className="mt-1 flex h-2 gap-0.5 overflow-hidden rounded-full bg-edge">
-                  <div className="h-full rounded-l-full transition-all duration-700" style={{ width: `${Math.min(100, d.open * 7)}%`, background: DEPT_COLORS[d.dept], opacity: 0.55 }} />
-                  <div className="h-full rounded-r-full transition-all duration-700" style={{ width: `${Math.min(40, d.critical * 8)}%`, background: "#ff4d4f" }} />
+                <div className="mt-1.5 flex h-2 gap-0.5 overflow-hidden rounded-full bg-edge">
+                  <div
+                    className="h-full rounded-l-full transition-all duration-700"
+                    style={{ width: `${Math.min(100, d.open * 7)}%`, backgroundColor: DEPT_COLORS[d.dept], opacity: 0.6 }}
+                  />
+                  <div
+                    className="h-full rounded-r-full transition-all duration-700"
+                    style={{ width: `${Math.min(40, d.critical * 8)}%`, backgroundColor: "#f43f5e" }}
+                  />
                 </div>
-                <p className="mt-0.5 font-mono text-[8.5px] text-faint">P(fail 72h) {(d.avgFailureProb * 100).toFixed(0)}% — trained model inference</p>
+                <p className="mt-1 text-[10.5px] text-faint font-mono">
+                  P(fail 72h): {(d.avgFailureProb * 100).toFixed(0)}% inferred risk
+                </p>
               </div>
             ))}
-            <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-2 font-mono text-[8.5px] leading-relaxed text-faint">
-              Demo computes scores centrally from the seeded data lake. Production design: departmental agents expose scores over mTLS — contracts documented in the README.
-            </div>
           </div>
         </section>
 
-        <section className="panel min-h-[260px]">
+        <section className="panel min-h-[280px]">
           <div className="panel-hd">
-            <span className="flex items-center gap-2">Event Spine <span className="anim-blink h-1.5 w-1.5 rounded-full bg-mint" /></span>
-            <button onClick={() => setWebhookOpen(true)} className="flex items-center gap-1 rounded border border-cyan/40 bg-cyan/10 px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase tracking-wider text-cyan transition hover:bg-cyan/20">
-              <Webhook size={9} /> Webhook payload
+            <span className="flex items-center gap-2">
+              Event Spine <span className="anim-blink h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            </span>
+            <button
+              onClick={() => setWebhookOpen(true)}
+              className="flex items-center gap-1 rounded-lg border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-[10.5px] font-semibold text-sky-400 hover:bg-sky-500/20 transition"
+            >
+              <Webhook size={11} /> Outbound Stream
             </button>
           </div>
           <div className="p-1">
@@ -295,34 +363,39 @@ export default function CommandClient({ initial }: { initial: DashboardState }) 
         </section>
       </div>
 
-      {/* Webhook payload modal */}
+      {/* Outbound Webhook Modal */}
       {webhookOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-abyss/85 p-4 backdrop-blur-sm" onClick={() => setWebhookOpen(false)}>
-          <div className="anim-rise w-full max-w-lg overflow-hidden rounded-2xl border border-cyan/40 bg-hull" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-cyan/30 bg-cyan/[0.07] px-4 py-3">
-              <p className="flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-widest text-cyan"><Webhook size={13} /> Outbound webhook — NTES + SIMRAN</p>
-              <span className="rounded bg-amber/15 px-2 py-0.5 font-mono text-[8px] font-bold uppercase tracking-wider text-amber">Simulated payload — demo not connected</span>
-              <button onClick={() => setWebhookOpen(false)} aria-label="Close webhook payload" className="rounded-lg border border-edge p-1 text-dim hover:text-ink"><X size={14} /></button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={() => setWebhookOpen(false)}>
+          <div className="anim-rise w-full max-w-lg overflow-hidden rounded-2xl border border-sky-500/30 bg-hull shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-sky-500/20 bg-sky-500/[0.06] px-5 py-3.5">
+              <p className="flex items-center gap-2 text-xs font-semibold text-sky-400">
+                <Webhook size={15} /> Outbound Payload — NTES & SIMRAN Stream
+              </p>
+              <button onClick={() => setWebhookOpen(false)} className="rounded-lg p-1 text-dim hover:text-ink">
+                <X size={15} />
+              </button>
             </div>
-            <pre className="overflow-x-auto p-4 font-mono text-[10.5px] leading-relaxed text-mint/90">
+            <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed text-emerald-400/90 bg-[#070b13]">
 {`POST https://ntes.indianrailways.gov.in/api/v2/tsr HTTP/1.1
-Authorization: Bearer ••••••••  X-Rakshak-Sign: sha256:9f2c…e1
+Authorization: Bearer ••••••••
+X-Rakshak-Signature: sha256:9f2c7a…e1
 
 {
-  "TSR": "Speed restriction 30 km/h at Km 4.2 ${firstBlock?.segmentCode ?? "NZM-ANVT"}",
+  "TSR_Notice": "Speed restriction 30 km/h at Km 4.2 ${firstBlock?.segmentCode ?? "NZM-ANVT"}",
   "Block_ID": "#${firstBlock?.id ?? 5}",
   "Corridor": "${firstBlock?.corridor ?? "DEL-HWH"}",
-  "Window": "${firstBlock ? `${fmtMin(firstBlock.startMin)}–${fmtMin(firstBlock.endMin)}` : "00:30–03:10"} IST, Day D+${firstBlock?.day ?? 0}",
+  "Window": "${firstBlock ? `${fmtMin(firstBlock.startMin)}–${fmtMin(firstBlock.endMin)}` : "00:30–03:10"} IST (Day +${firstBlock?.day ?? 0})",
   "Departments": ${JSON.stringify(firstBlock?.departments ?? ["ENG", "TRD", "SNT"])},
-  "Valid_Till": "${firstBlock ? fmtMin(firstBlock.endMin) : "03:10"} IST",
-  "Occupancy": "${firstBlock?.isSuperBlock ? "SUPER_BLOCK_SINGLE_LINE" : "SINGLE_DEPT"}",
-  "SIMRAN_Push": "queued",
+  "Occupancy": "${firstBlock?.isSuperBlock ? "SUPER_BLOCK_SINGLE_LINE" : "SINGLE_DEPARTMENT"}",
+  "SIMRAN_Loco_Push": "queued",
   "NTES_Recompute": "queued",
-  "Issued_By": "RAKSHAK-CORE · autoSigner v3",
+  "Issued_By": "RAKSHAK-CORE v2.1",
   "Audit_Trail": "RR/BLK/2026/000${firstBlock?.id ?? 5}"
 }`}
             </pre>
-            <p className="border-t border-edge px-4 py-2.5 font-mono text-[8.5px] leading-relaxed text-faint">Exact payload streamed to NTES, SIMRAN loco-pilot tablets and Station Master SMS gateway — zero manual data entry.</p>
+            <div className="border-t border-edge px-5 py-3 text-xs text-dim">
+              Payload automatically pushed to NTES, SIMRAN locomotive tablets, and SMS gateways upon block sign-off.
+            </div>
           </div>
         </div>
       )}

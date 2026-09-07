@@ -17,9 +17,9 @@ export default function SectionInspector({ segment }: { segment: SegmentDTO | nu
   if (!segment) {
     return (
       <div className="flex h-full min-h-[220px] flex-col items-center justify-center p-6 text-center">
-        <Milestone size={26} className="text-faint" />
-        <p className="mt-3 max-w-[240px] text-[11.5px] leading-relaxed text-dim">
-          Click any track section on the map to inspect its real chainage, jurisdiction, OHE depot and open defects.
+        <Milestone size={24} className="text-faint" />
+        <p className="mt-2.5 max-w-[220px] text-xs leading-relaxed text-dim">
+          Click any track section on the map to inspect its chainage, jurisdiction, OHE depot, and open defects.
         </p>
       </div>
     );
@@ -30,55 +30,69 @@ export default function SectionInspector({ segment }: { segment: SegmentDTO | nu
   const segDefects = defects.filter((d) => d.segmentId === segment.id && d.status !== "closed");
 
   return (
-    <div className="anim-rise space-y-3 p-3.5">
+    <div className="anim-rise space-y-3 p-4">
       <div>
         <div className="flex items-center gap-2">
-          <span className="rounded px-2 py-0.5 font-mono text-[11px] font-bold" style={{ background: `${color}1f`, color }}>
+          <span className="rounded-lg px-2.5 py-0.5 font-mono text-xs font-bold" style={{ backgroundColor: `${color}20`, color }}>
             {segment.code}
           </span>
-          <span className="font-mono text-[9px] uppercase tracking-widest text-faint">{segment.corridor} corridor</span>
-          {segment.isBridge && <span className="rounded bg-amber/15 px-1.5 py-0.5 font-mono text-[8.5px] font-bold text-amber">YAMUNA BRIDGE</span>}
+          <span className="text-xs font-semibold text-dim">{segment.corridor} Corridor</span>
+          {segment.isBridge && (
+            <span className="rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.2 text-[10px] font-bold text-amber-400">
+              Yamuna Bridge
+            </span>
+          )}
         </div>
-        <p className="mt-1.5 flex items-center gap-1.5 font-mono text-[9.5px] text-dim">
-          <Milestone size={10} className="text-faint" /> {meta?.chainage}
+        <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-dim">
+          <Milestone size={12} className="text-faint" /> {meta?.chainage}
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10px]">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
         {[
-          { icon: <LandPlot size={10} />, text: meta?.geom },
-          { icon: <RadioTower size={10} />, text: meta?.signalling },
-          { icon: <MapPin size={10} />, text: meta?.rail },
-          { icon: <Milestone size={10} />, text: meta?.sleeper },
-          { icon: <TrafficCone size={10} />, text: meta?.lcGates },
-          { icon: <RadioTower size={10} />, text: meta?.ohe },
+          { icon: <LandPlot size={12} />, text: meta?.geom },
+          { icon: <RadioTower size={12} />, text: meta?.signalling },
+          { icon: <MapPin size={12} />, text: meta?.rail },
+          { icon: <Milestone size={12} />, text: meta?.sleeper },
+          { icon: <TrafficCone size={12} />, text: meta?.lcGates },
+          { icon: <RadioTower size={12} />, text: meta?.ohe },
         ].map((row, i) => (
           <div key={i} className="flex items-start gap-1.5 text-dim">
             <span className="mt-0.5 shrink-0 text-faint">{row.icon}</span>
-            <span className="leading-snug">{row.text}</span>
+            <span className="leading-snug text-[11.5px]">{row.text}</span>
           </div>
         ))}
       </div>
 
-      <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-2.5">
-        <p className="font-mono text-[8.5px] uppercase tracking-widest text-faint">Jurisdiction — {meta?.jurisdiction}</p>
-        <p className="mt-0.5 font-mono text-[8.5px] text-faint">Restriction: {meta?.tsr}</p>
+      <div className="rounded-xl border border-edge bg-hull/60 p-3 text-xs">
+        <p className="font-medium text-dim">Jurisdiction: <span className="text-ink">{meta?.jurisdiction}</span></p>
+        <p className="mt-0.5 text-faint">Speed Restriction: {meta?.tsr}</p>
       </div>
 
       <div>
-        <p className="font-mono text-[9px] uppercase tracking-widest text-faint">
-          Open defects on section — <span className="text-amber">{segDefects.length}</span>
-        </p>
-        <div className="mt-1.5 max-h-[130px] space-y-1 overflow-y-auto pr-1">
-          {segDefects.length === 0 && <p className="py-2 font-mono text-[9.5px] text-mint">Section clear — no open defects reported by TMS/TDMS/SMMS</p>}
+        <div className="flex items-center justify-between text-xs font-semibold text-dim mb-1.5">
+          <span>Open Defects on Section</span>
+          <span className="font-mono text-amber-400">{segDefects.length}</span>
+        </div>
+        <div className="max-h-32 space-y-1.5 overflow-y-auto pr-1">
+          {segDefects.length === 0 && (
+            <p className="py-2 text-xs text-emerald-400">Section clear — no active open defects reported.</p>
+          )}
           {segDefects.map((d) => (
-            <div key={d.id} className="flex items-center gap-2 rounded-md bg-white/[0.03] px-2 py-1.5">
-              <span className="tabular shrink-0 rounded px-1 font-mono text-[9px] font-bold" style={{ background: d.aiScore > 70 ? "rgba(255,77,79,0.16)" : "rgba(245,165,36,0.14)", color: d.aiScore > 70 ? "#ff9192" : "#f5c66b" }}>
+            <div key={d.id} className="flex items-center gap-2 rounded-lg bg-hull/80 border border-edge/60 px-2.5 py-1.5 text-xs">
+              <span
+                className="font-mono font-bold text-[10px] rounded px-1"
+                style={{
+                  backgroundColor: d.aiScore > 70 ? "rgba(244,63,94,0.15)" : "rgba(245,158,11,0.15)",
+                  color: d.aiScore > 70 ? "#fb7185" : "#f59e0b",
+                }}
+              >
                 {d.aiScore.toFixed(0)}
               </span>
-              <span className="min-w-0 flex-1 truncate text-[10px] text-ink/85">{d.title}</span>
-              <span className="shrink-0 font-mono text-[8.5px]" style={{ color: DEPT_COLORS[d.department] }}>{d.department}</span>
-              <span className="shrink-0 font-mono text-[8.5px] text-faint">{d.sourceSystem}</span>
+              <span className="min-w-0 flex-1 truncate text-ink">{d.title}</span>
+              <span className="shrink-0 font-semibold" style={{ color: DEPT_COLORS[d.department] }}>
+                {d.department}
+              </span>
             </div>
           ))}
         </div>

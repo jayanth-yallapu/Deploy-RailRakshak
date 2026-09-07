@@ -3,13 +3,13 @@ import { fmtMin } from "@/lib/engine/network";
 import type { LiveTrainDTO } from "@/lib/engine/types";
 
 const KIND_COLOR: Record<string, string> = {
-  RAJDHANI: "#ff9f43",
-  VANDE_BHARAT: "#7ee787",
-  SHATABDI: "#34d399",
+  RAJDHANI: "#f59e0b",
+  VANDE_BHARAT: "#10b981",
+  SHATABDI: "#10b981",
   EXPRESS: "#38bdf8",
   PASSENGER: "#c084fc",
   DFC_FREIGHT: "#f43f5e",
-  RAPIDX: "#22d3ee",
+  RAPIDX: "#06b6d4",
 };
 
 export default function LiveBoard({ trains }: { trains: LiveTrainDTO[] }) {
@@ -19,35 +19,41 @@ export default function LiveBoard({ trains }: { trains: LiveTrainDTO[] }) {
   });
 
   return (
-    <div className="max-h-[300px] overflow-y-auto">
+    <div className="max-h-72 overflow-y-auto divide-y divide-edge/60">
       {sorted.length === 0 && (
-        <p className="p-4 text-center font-mono text-[10px] text-faint">No trains in tracking window — off-peak hours</p>
+        <p className="p-6 text-center text-xs text-dim">No trains in tracking window</p>
       )}
       {sorted.map((t, i) => {
         const col = KIND_COLOR[t.kind] ?? "#94a3b8";
         return (
-          <div key={t.number + i} className="flex items-center gap-2.5 border-b border-white/[0.04] px-3 py-2 hover:bg-white/[0.02]">
-            <span className="tabular w-[52px] shrink-0 font-mono text-[11px] font-bold" style={{ color: col }}>
+          <div key={t.number + i} className="flex items-center gap-3 p-3 hover:bg-white/[0.02] transition">
+            <span className="font-mono text-xs font-bold shrink-0" style={{ color: col }}>
               {t.number}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[11px] font-semibold text-ink/90">{t.name}</p>
-              <p className="flex items-center gap-1 font-mono text-[8.5px] text-faint">
-                {t.from} <ArrowRight size={8} /> {t.to} · SCH {fmtMin(t.schDep)}
+              <p className="truncate text-xs font-semibold text-ink">{t.name}</p>
+              <p className="flex items-center gap-1 text-[11px] text-dim">
+                {t.from} <ArrowRight size={10} className="text-faint" /> {t.to} · Sch {fmtMin(t.schDep)}
               </p>
             </div>
             <div className="shrink-0 text-right">
               {t.status === "RUNNING" ? (
                 <>
-                  <p className="font-mono text-[9px] font-bold text-mint">@{t.segCode?.replace("XR:", "")} → {t.nextStation}</p>
-                  <p className={`font-mono text-[8.5px] ${t.delayMin > 8 ? "text-signal" : "text-dim"}`}>
-                    {t.delayMin === 0 ? "RIGHT TIME" : `+${t.delayMin}m`} · {t.progressPct}%
+                  <p className="text-xs font-bold text-emerald-400 font-mono">
+                    @{t.segCode?.replace("XR:", "")} → {t.nextStation}
+                  </p>
+                  <p className={`text-[10.5px] font-mono ${t.delayMin > 8 ? "text-rose-400 font-semibold" : "text-dim"}`}>
+                    {t.delayMin === 0 ? "Right Time" : `+${t.delayMin}m delay`} · {t.progressPct}%
                   </p>
                 </>
               ) : t.status === "SCHEDULED" ? (
-                <p className="font-mono text-[9px] text-dim">YET TO START</p>
+                <span className="rounded bg-panel px-2 py-0.5 text-[10px] font-semibold text-dim border border-edge">
+                  Scheduled
+                </span>
               ) : (
-                <p className="font-mono text-[9px] text-faint">ARRIVED</p>
+                <span className="rounded bg-panel px-2 py-0.5 text-[10px] text-faint">
+                  Arrived
+                </span>
               )}
             </div>
           </div>

@@ -31,7 +31,7 @@ export default function WhatIfLab({ stations, segments, fog }: { stations: Stati
       } finally {
         setLoading(false);
       }
-    }, 300);
+    }, 280);
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
@@ -42,62 +42,108 @@ export default function WhatIfLab({ stations, segments, fog }: { stations: Stati
   return (
     <section className="panel overflow-hidden">
       <div className="panel-hd">
-        <span className="flex items-center gap-2"><FlaskConical size={12} className="text-cyan" /> What-If Cascade Lab — cascade delay propagation · ₹ cost-benefit engine</span>
-        <span className="text-[9px]">{loading ? "COMPUTING…" : "LIVE"}</span>
+        <span className="flex items-center gap-2">
+          <FlaskConical size={14} className="text-sky-400" />
+          What-If Cascade Simulation Lab (Cost-Benefit & Delay Diffusion)
+        </span>
+        <span className="text-[10.5px] font-mono text-dim">{loading ? "Simulating…" : "Live"}</span>
       </div>
-      <div className="grid grid-cols-1 gap-0 lg:grid-cols-5">
-        {/* controls */}
-        <div className="border-b border-edge/60 p-4 lg:col-span-2 lg:border-b-0 lg:border-r">
-          <label className="font-mono text-[9px] uppercase tracking-widest text-faint">Block section</label>
-          <select value={segmentId} onChange={(e) => setSegmentId(Number(e.target.value))} className="mt-1 w-full rounded-md border border-edge bg-hull px-2.5 py-2 font-mono text-[11px] text-ink outline-none">
-            {segments.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.code} · {s.corridor}{s.isBridge ? " · BRIDGE" : ""}
-              </option>
-            ))}
-          </select>
 
-          <div className="mt-4">
-            <div className="flex items-center justify-between font-mono text-[9px] uppercase tracking-widest text-faint">
-              <span>Block duration</span>
-              <span className="tabular text-[12px] font-bold text-amber">{durationH} h</span>
-            </div>
-            <input type="range" min={1} max={8} step={0.5} value={durationH} onChange={(e) => setDurationH(Number(e.target.value))} className="mt-1.5 w-full accent-amber" />
-            <div className="flex justify-between font-mono text-[8px] text-faint"><span>1h</span><span>4h</span><span>8h</span></div>
+      <div className="grid grid-cols-1 gap-0 lg:grid-cols-5">
+        {/* Scenario Controls */}
+        <div className="border-b border-edge p-5 lg:col-span-2 lg:border-b-0 lg:border-r space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-dim mb-1">Target Track Section</label>
+            <select
+              value={segmentId}
+              onChange={(e) => setSegmentId(Number(e.target.value))}
+              className="w-full rounded-xl border border-edge bg-panel px-3 py-2 text-xs font-medium text-ink outline-none focus:border-amber-500/40"
+            >
+              {segments.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.code} · {s.corridor}{s.isBridge ? " (Bridge)" : ""}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <div className="mt-4">
-            <div className="flex items-center justify-between font-mono text-[9px] uppercase tracking-widest text-faint">
-              <span>Start time</span>
-              <span className="tabular text-[12px] font-bold text-cyan">{fmtMin(startMin)} IST</span>
+          <div>
+            <div className="flex items-center justify-between text-xs font-medium text-dim">
+              <span>Proposed Block Duration</span>
+              <span className="font-mono font-bold text-amber-400">{durationH} hrs</span>
             </div>
-            <input type="range" min={0} max={1410} step={30} value={startMin} onChange={(e) => setStartMin(Number(e.target.value))} className="mt-1.5 w-full accent-cyan" />
-            <div className="flex justify-between font-mono text-[8px] text-faint"><span>00:00</span><span>Golden 00:30–04:30</span><span>23:30</span></div>
+            <input
+              type="range"
+              min={1}
+              max={8}
+              step={0.5}
+              value={durationH}
+              onChange={(e) => setDurationH(Number(e.target.value))}
+              className="mt-2 w-full accent-amber-500 cursor-pointer"
+            />
+            <div className="flex justify-between text-[10px] text-faint font-mono">
+              <span>1h</span><span>4h</span><span>8h</span>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between text-xs font-medium text-dim">
+              <span>Start Window Time</span>
+              <span className="font-mono font-bold text-sky-400">{fmtMin(startMin)} IST</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={1410}
+              step={30}
+              value={startMin}
+              onChange={(e) => setStartMin(Number(e.target.value))}
+              className="mt-2 w-full accent-sky-500 cursor-pointer"
+            />
+            <div className="flex justify-between text-[10px] text-faint font-mono">
+              <span>00:00</span><span className="text-amber-400">Golden 00:30–04:30</span><span>23:30</span>
+            </div>
           </div>
 
           <button
+            type="button"
             onClick={() => setSuperBlock(!superBlock)}
-            className={`mt-4 flex w-full items-center gap-2.5 rounded-lg border p-2.5 text-left transition ${superBlock ? "border-violet/40 bg-violet/10" : "border-edge bg-white/[0.02]"}`}
+            className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${
+              superBlock
+                ? "border-purple-500/40 bg-purple-500/10 text-purple-300"
+                : "border-edge bg-panel text-dim hover:text-ink"
+            }`}
           >
-            <Boxes size={16} className={superBlock ? "text-violet" : "text-faint"} />
-            <span>
-              <span className={`block text-[11.5px] font-bold ${superBlock ? "text-violet" : "text-dim"}`}>Super-block bundling {superBlock ? "ON" : "OFF"}</span>
-              <span className="block font-mono text-[8.5px] uppercase tracking-wider text-faint">ENG+TRD+SNT simultaneous occupancy</span>
-            </span>
+            <Boxes size={18} className={superBlock ? "text-purple-400" : "text-faint"} />
+            <div>
+              <span className="block text-xs font-bold">
+                Super-Block Bundling: {superBlock ? "Enabled" : "Disabled"}
+              </span>
+              <span className="block text-[11px] text-faint">Simultaneous Track, OHE & S&T work</span>
+            </div>
           </button>
 
           {seg && (
-            <div className="mt-4 grid grid-cols-3 gap-2 text-center font-mono text-[9px] text-faint">
-              <div className="rounded-md bg-white/[0.03] py-2"><span className="tabular block text-[13px] font-bold text-ink">{seg.dailyTrains}</span>trains/day</div>
-              <div className="rounded-md bg-white/[0.03] py-2"><span className="tabular block text-[13px] font-bold text-ink">{seg.criticality}/10</span>criticality</div>
-              <div className="rounded-md bg-white/[0.03] py-2"><span className="tabular block text-[13px] font-bold text-ink">{seg.lengthKm}km</span>section</div>
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="rounded-xl border border-edge bg-hull/60 p-2.5">
+                <span className="block font-mono font-bold text-ink">{seg.dailyTrains}</span>
+                <span className="text-[10px] text-dim">trains/day</span>
+              </div>
+              <div className="rounded-xl border border-edge bg-hull/60 p-2.5">
+                <span className="block font-mono font-bold text-ink">{seg.criticality}/10</span>
+                <span className="text-[10px] text-dim">criticality</span>
+              </div>
+              <div className="rounded-xl border border-edge bg-hull/60 p-2.5">
+                <span className="block font-mono font-bold text-ink">{seg.lengthKm} km</span>
+                <span className="text-[10px] text-dim">length</span>
+              </div>
             </div>
           )}
         </div>
 
-        {/* map + verdict */}
-        <div className="p-4 lg:col-span-3">
-          <div className="gridlines overflow-hidden rounded-xl border border-edge/60">
+        {/* Map & Scenario Verdict */}
+        <div className="p-5 lg:col-span-3 space-y-4">
+          <div className="gridlines overflow-hidden rounded-xl border border-edge bg-[#070b13]">
             <RailMap
               stations={stations}
               segments={segments}
@@ -108,47 +154,62 @@ export default function WhatIfLab({ stations, segments, fog }: { stations: Stati
           </div>
 
           {result && (
-            <div className="anim-rise mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div className={`rounded-xl border p-3.5 ${result.recommend ? "border-mint/30 bg-mint/[0.06]" : "border-signal/30 bg-signal/[0.06]"}`}>
+            <div className="anim-rise grid grid-cols-1 gap-4 md:grid-cols-2">
+              {/* Verdict Card */}
+              <div
+                className={`rounded-xl border p-4 ${
+                  result.recommend
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                    : "border-rose-500/30 bg-rose-500/10 text-rose-300"
+                }`}
+              >
                 <div className="flex items-center gap-2">
-                  {result.recommend ? <CheckCircle2 size={16} className="text-mint" /> : <XCircle size={16} className="text-signal" />}
-                  <span className={`font-mono text-[11px] font-bold uppercase tracking-widest ${result.recommend ? "text-mint" : "text-signal"}`}>
-                    {result.recommend ? "AI recommends block" : "AI rejects this window"}
+                  {result.recommend ? <CheckCircle2 size={17} className="text-emerald-400" /> : <XCircle size={17} className="text-rose-400" />}
+                  <span className="text-xs font-bold uppercase tracking-wider">
+                    {result.recommend ? "AI Recommendation: Approved" : "AI Recommendation: Rejected"}
                   </span>
                 </div>
-                <p className="mt-2 text-[11.5px] leading-relaxed text-ink/85">{result.verdict}</p>
-                <p className="mt-2 font-mono text-[9px] uppercase tracking-wider text-faint">
-                  best window instead: <span className="text-amber">{fmtMin(result.bestWindow.startMin)} IST</span>
+                <p className="mt-2 text-xs text-ink/90 leading-relaxed">{result.verdict}</p>
+                <p className="mt-3 text-[11px] font-mono text-dim">
+                  Optimal alternate slot: <strong className="text-amber-400">{fmtMin(result.bestWindow.startMin)} IST</strong>
                 </p>
               </div>
-              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3.5">
-                <div className="grid grid-cols-2 gap-x-3 gap-y-2 font-mono text-[10px]">
-                  <span className="flex items-center gap-1.5 text-dim"><TrainFront size={11} /> Trains hit</span><span className="tabular text-right font-bold text-ink">{result.affectedTrains}</span>
-                  <span className="flex items-center gap-1.5 text-dim"><Fuel size={11} /> Delay minutes</span><span className="tabular text-right font-bold text-amber">{result.totalDelayMin}</span>
-                  <span className="flex items-center gap-1.5 text-dim"><Users size={11} /> Pax delay cost</span><span className="tabular text-right text-signal">{lakh(result.passengerDelayCost)}</span>
-                  <span className="flex items-center gap-1.5 text-dim"><TrafficCone size={11} /> DFC penalty</span><span className="tabular text-right text-signal">{lakh(result.freightPenalty)}</span>
-                  <span className="flex items-center gap-1.5 text-dim"><BadgeIndianRupee size={11} /> Failure cost avoided</span><span className="tabular text-right text-mint">+{lakh(result.futureFailureCostAvoided)}</span>
-                  <span className="flex items-center gap-1.5 text-dim"><Fuel size={11} /> Idle/shunt savings</span><span className="tabular text-right text-mint">+{lakh(result.dieselSavings)}</span>
-                  <span className="col-span-2 mt-1 flex items-center justify-between border-t border-white/[0.07] pt-2 text-[11px]">
-                    <span className="uppercase tracking-widest text-faint">Net benefit</span>
-                    <span className={`tabular text-[15px] font-bold ${result.netBenefit >= 0 ? "text-mint" : "text-signal"}`}>{result.netBenefit >= 0 ? "+" : "−"}{lakh(Math.abs(result.netBenefit))}</span>
-                  </span>
+
+              {/* Financial Balance Sheet */}
+              <div className="rounded-xl border border-edge bg-panel p-4 text-xs space-y-2">
+                <div className="flex items-center justify-between text-dim">
+                  <span className="flex items-center gap-1.5"><TrainFront size={12} /> Impacted Trains</span>
+                  <span className="font-mono font-bold text-ink">{result.affectedTrains}</span>
                 </div>
-                <div className="mt-2.5">
-                  <div className="flex justify-between font-mono text-[8.5px] uppercase tracking-wider text-faint"><span>Human impact score</span><span className="tabular">{result.humanImpactScore}/100</span></div>
-                  <div className="mt-1 h-1.5 rounded-full bg-edge"><div className="h-full rounded-full transition-all duration-500" style={{ width: `${result.humanImpactScore}%`, background: result.humanImpactScore > 60 ? "#ff4d4f" : result.humanImpactScore > 30 ? "#f5a524" : "#34d399" }} /></div>
+                <div className="flex items-center justify-between text-dim">
+                  <span className="flex items-center gap-1.5"><Fuel size={12} /> Total Delay Minutes</span>
+                  <span className="font-mono font-bold text-amber-400">{result.totalDelayMin} min</span>
+                </div>
+                <div className="flex items-center justify-between text-dim">
+                  <span className="flex items-center gap-1.5"><Users size={12} /> Passenger Delay Cost</span>
+                  <span className="font-mono text-rose-400">{lakh(result.passengerDelayCost)}</span>
+                </div>
+                <div className="flex items-center justify-between text-dim">
+                  <span className="flex items-center gap-1.5"><BadgeIndianRupee size={12} /> Future Failure Avoided</span>
+                  <span className="font-mono text-emerald-400">+{lakh(result.futureFailureCostAvoided)}</span>
+                </div>
+                <div className="flex items-center justify-between border-t border-edge pt-2 font-semibold">
+                  <span>Net Economic Benefit</span>
+                  <span className={`font-mono text-sm font-bold ${result.netBenefit >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                    {result.netBenefit >= 0 ? "+" : "−"}{lakh(Math.abs(result.netBenefit))}
+                  </span>
                 </div>
               </div>
             </div>
           )}
 
           {result && result.cascade.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2">
               {result.cascade.map((c) => (
-                <div key={c.station} className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-1.5">
-                  <span className="font-mono text-[9px] uppercase tracking-wider text-faint">{c.station}</span>
-                  <span className="tabular ml-2 text-[12px] font-bold text-amber">{c.delayMin}m</span>
-                  <span className="ml-2 hidden text-[9.5px] text-dim sm:inline">{c.note}</span>
+                <div key={c.station} className="rounded-lg border border-edge bg-panel px-3 py-1.5 text-xs">
+                  <span className="font-mono font-bold text-dim">{c.station}:</span>
+                  <span className="ml-1.5 font-mono font-bold text-amber-400">+{c.delayMin}m</span>
+                  <span className="ml-1.5 text-faint hidden sm:inline">({c.note})</span>
                 </div>
               ))}
             </div>

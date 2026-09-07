@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Camera, CheckCircle2, ChevronLeft, Loader2, MapPin, Satellite, TrainFront } from "lucide-react";
+import { Camera, CheckCircle2, ChevronLeft, Loader2, MapPin, Satellite, TrainFront, ArrowRight } from "lucide-react";
 import SmartImg from "@/components/SmartImg";
 import { SEGMENTS, INSPECTOR_ZONE, sectionMeta } from "@/lib/engine/network";
 import { FIELD_PHOTOS } from "@/lib/engine/network";
@@ -19,7 +19,7 @@ const PRESETS = [
 export default function PatrolPage() {
   const zoneSegs = SEGMENTS.filter((s) => INSPECTOR_ZONE.sections.includes(s.code));
   const [presetIdx, setPresetIdx] = useState(0);
-  const [segIdx, setSegIdx] = useState(1); // NDLS-NZM default-ish
+  const [segIdx, setSegIdx] = useState(1);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<number | null>(null);
@@ -33,7 +33,7 @@ export default function PatrolPage() {
   function acquireGps() {
     setSatLock(true);
     const pt = seg.geo[Math.floor(seg.geo.length / 2)];
-    setTimeout(() => setGps(`${pt[0].toFixed(5)}°N, ${pt[1].toFixed(5)}°E`), 700);
+    setTimeout(() => setGps(`${pt[0].toFixed(5)}°N, ${pt[1].toFixed(5)}°E`), 600);
   }
 
   async function report() {
@@ -60,91 +60,144 @@ export default function PatrolPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center gap-8 bg-abyss p-6">
-      <div className="absolute inset-0 gridlines opacity-60" />
-      {/* phone frame */}
-      <div className="relative w-[330px] shrink-0 rounded-[2.4rem] border-[7px] border-[#1a2438] bg-[#060b14] p-3 shadow-[0_0_80px_rgba(34,211,238,0.12)]">
-        <div className="mx-auto mb-2 h-4 w-24 rounded-b-xl bg-[#1a2438]" />
-        <div className="rounded-[1.6rem] border border-edge/60 bg-abyss p-3">
-          <div className="flex items-center justify-between px-1 py-1.5">
+    <div className="relative flex min-h-screen items-center justify-center gap-12 bg-abyss p-6 text-ink">
+      <div className="absolute inset-0 gridlines opacity-50" />
+
+      {/* Phone Simulator Frame */}
+      <div className="relative z-10 w-[340px] shrink-0 rounded-[2.8rem] border-[8px] border-[#1c2638] bg-[#0c121e] p-3 shadow-2xl shadow-cyan-950/20">
+        <div className="mx-auto mb-2 h-4 w-24 rounded-b-xl bg-[#1c2638]" />
+        <div className="rounded-[2rem] border border-edge/80 bg-hull p-4">
+          <div className="flex items-center justify-between border-b border-edge/60 pb-3">
             <div className="flex items-center gap-2">
-              <TrainFront size={15} className="text-amber" />
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400">
+                <TrainFront size={16} />
+              </span>
               <div>
-                <p className="text-[11px] font-bold text-ink">RAKSHAK PATROL</p>
-                <p className="font-mono text-[7px] uppercase tracking-widest text-faint">Gangman field app · v2.1</p>
+                <p className="text-xs font-bold text-ink">RAKSHAK PATROL</p>
+                <p className="text-[10px] text-dim">Gangman Field Handset v2.1</p>
               </div>
             </div>
-            <span className="anim-blink h-2 w-2 rounded-full bg-mint" />
+            <span className="anim-blink h-2 w-2 rounded-full bg-emerald-400" />
           </div>
 
-          <div className="mt-2 space-y-2.5">
+          <div className="mt-3 space-y-3">
             <div>
-              <p className="mb-1 font-mono text-[8px] uppercase tracking-widest text-faint">Defect type</p>
-              <div className="grid grid-cols-2 gap-1.5">
+              <label className="block text-[11px] font-semibold text-dim">Observed Defect Type</label>
+              <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                 {PRESETS.map((p, i) => (
-                  <button key={p.title} onClick={() => setPresetIdx(i)} className={`rounded-lg border px-2 py-2 text-left text-[9.5px] font-semibold transition ${presetIdx === i ? "border-amber bg-amber/15 text-amber" : "border-edge text-dim"}`}>
-                    {p.title}
-                    <span className="mt-0.5 block font-mono text-[7px] text-faint">{p.dept}</span>
+                  <button
+                    key={p.title}
+                    type="button"
+                    onClick={() => setPresetIdx(i)}
+                    className={`rounded-lg border p-2 text-left transition ${
+                      presetIdx === i
+                        ? "border-amber-500/60 bg-amber-500/15 text-amber-300"
+                        : "border-edge bg-panel/50 text-dim hover:text-ink"
+                    }`}
+                  >
+                    <span className="block text-[10.5px] font-semibold leading-tight">{p.title}</span>
+                    <span className="mt-0.5 block text-[9.5px] font-mono text-faint">{p.dept}</span>
                   </button>
                 ))}
               </div>
             </div>
 
             <div>
-              <p className="mb-1 font-mono text-[8px] uppercase tracking-widest text-faint">Section</p>
-              <select value={segIdx} onChange={(e) => setSegIdx(Number(e.target.value))} className="w-full rounded-lg border border-edge bg-hull px-2 py-2 font-mono text-[10px] text-ink outline-none">
+              <label className="block text-[11px] font-semibold text-dim">Track Section</label>
+              <select
+                value={segIdx}
+                onChange={(e) => setSegIdx(Number(e.target.value))}
+                className="mt-1 w-full rounded-lg border border-edge bg-panel px-3 py-2 text-xs font-medium text-ink outline-none focus:border-amber-500/40"
+              >
                 {zoneSegs.map((s, i) => (
-                  <option key={s.code} value={i}>{s.code} · {s.corridor}</option>
+                  <option key={s.code} value={i}>
+                    {s.code} · {s.corridor}
+                  </option>
                 ))}
               </select>
             </div>
 
-            <button onClick={acquireGps} className={`flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2.5 font-mono text-[9.5px] transition ${satLock ? "border-mint/40 bg-mint/10 text-mint" : "border-edge text-dim"}`}>
-              <Satellite size={12} className={satLock ? "animate-pulse" : ""} />
-              {satLock ? gps : "Acquire GPS lock"}
+            <button
+              onClick={acquireGps}
+              className={`flex w-full items-center justify-center gap-2 rounded-xl border p-2.5 text-xs font-semibold transition ${
+                satLock
+                  ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                  : "border-edge bg-panel text-dim hover:text-ink"
+              }`}
+            >
+              <Satellite size={14} className={satLock ? "animate-pulse" : ""} />
+              {satLock ? gps : "Acquire GPS Satellite Lock"}
             </button>
 
-            <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Short note — e.g. crack ~9mm, spreading" className="w-full rounded-lg border border-edge bg-hull px-2.5 py-2 text-[10.5px] text-ink outline-none placeholder:text-faint" />
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Observation note (e.g. ~9mm fracture)..."
+              className="w-full rounded-xl border border-edge bg-panel px-3 py-2 text-xs text-ink placeholder:text-faint focus:border-amber-500/40 focus:outline-none"
+            />
 
-            <div className="overflow-hidden rounded-xl border border-edge">
+            <div className="overflow-hidden rounded-xl border border-edge bg-black/40">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <SmartImg src={FIELD_PHOTOS[preset.dept as keyof typeof FIELD_PHOTOS].before} alt="Captured defect" className="aspect-[4/3] w-full object-cover" />
-              <p className="flex items-center gap-1 bg-black/50 px-2 py-1 font-mono text-[7.5px] text-dim"><MapPin size={8} /> GPS + timestamp auto-embedded at capture</p>
+              <SmartImg
+                src={FIELD_PHOTOS[preset.dept as keyof typeof FIELD_PHOTOS].before}
+                alt="Captured defect"
+                className="aspect-[4/3] w-full object-cover"
+              />
+              <div className="flex items-center gap-1.5 bg-panel px-3 py-1.5 text-[10px] text-dim">
+                <MapPin size={10} className="text-amber-400" />
+                <span>EXIF GPS & Timestamp Auto-Embedded</span>
+              </div>
             </div>
 
             {sent ? (
-              <div className="anim-rise rounded-xl border border-mint/40 bg-mint/10 p-3 text-center">
-                <CheckCircle2 size={20} className="mx-auto text-mint" />
-                <p className="mt-1.5 text-[10.5px] font-bold text-mint">Report #{sent} transmitted</p>
-                <p className="mt-0.5 font-mono text-[8px] text-dim">Section Inspector notified instantly — appears in Pending Validation</p>
-                <button onClick={() => setSent(null)} className="mt-2 rounded-lg border border-mint/40 px-3 py-1.5 font-mono text-[8.5px] text-mint">Report another</button>
+              <div className="anim-rise rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-center">
+                <CheckCircle2 size={20} className="mx-auto text-emerald-400" />
+                <p className="mt-1 text-xs font-bold text-emerald-300">Report #{sent} Transmitted</p>
+                <p className="mt-0.5 text-[10.5px] text-dim">Appears in Section Inspector Pending Validation</p>
+                <button
+                  onClick={() => setSent(null)}
+                  className="mt-2 text-xs font-semibold text-amber-400 hover:underline"
+                >
+                  Report another defect
+                </button>
               </div>
             ) : (
-              <button onClick={report} disabled={busy || !satLock} className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-saffron to-amber px-4 py-3 font-mono text-[10.5px] font-bold uppercase tracking-widest text-abyss transition hover:brightness-110 disabled:opacity-40">
-                {busy ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />}
-                {busy ? "Transmitting…" : "Photo + report defect"}
+              <button
+                onClick={report}
+                disabled={busy || !satLock}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 py-2.5 text-xs font-bold text-slate-950 shadow-md transition hover:bg-amber-400 disabled:opacity-40"
+              >
+                {busy ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+                {busy ? "Transmitting…" : "Capture Photo & Submit"}
               </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* side copy */}
-      <div className="relative hidden max-w-sm lg:block">
-        <Link href="/login" className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-faint hover:text-ink">
-          <ChevronLeft size={12} /> Back to login
+      {/* Descriptive side copy */}
+      <div className="relative z-10 hidden max-w-sm lg:block">
+        <Link
+          href="/login"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-dim hover:text-ink transition"
+        >
+          <ChevronLeft size={14} /> Back to Desk Selection
         </Link>
-        <h1 className="mt-4 text-3xl font-bold text-ink">The Patroller&apos;s Phone</h1>
-        <p className="mt-3 text-[13px] leading-relaxed text-dim">
-          Every gangman and track patroller carries RAKSHAK PATROL. One photo, one tap — and the
-          defect lands on the Section Inspector&apos;s dashboard with GPS, timestamp and chainage
-          in under a second. No paper diaries. No radio relays. No lost reports.
+        <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-ink">
+          The Track Patroller&apos;s Handset
+        </h1>
+        <p className="mt-3 text-sm leading-relaxed text-dim">
+          Every gangman and keyman carries Rakshak Patrol. A single photo capture locks GPS coordinates, derives exact chainage, and routes the ticket directly to the Section Inspector in under a second.
         </p>
-        <div className="mt-5 space-y-2 font-mono text-[9.5px] text-faint">
-          <p>▸ Offline-first — syncs when signal returns (tunnel-safe)</p>
-          <p>▸ Chainage auto-derived from nearest track GPS</p>
-          <p>▸ Photo EXIF locked — tamper-proof evidence chain</p>
-          <p>▸ Feeds directly into Step 0 of the maintenance lifecycle</p>
+
+        <div className="mt-6 space-y-2.5 rounded-2xl border border-edge bg-panel/50 p-4 text-xs text-dim">
+          <p className="font-semibold text-ink">Key Features:</p>
+          <ul className="space-y-1.5 text-[11px] text-dim leading-relaxed">
+            <li>▸ Offline-first architecture for tunnels and remote cuttings</li>
+            <li>▸ Automatic nearest-track GPS chainage calculation</li>
+            <li>▸ Cryptographic EXIF photo stamp prevents fraudulent reporting</li>
+            <li>▸ Direct real-time feed into the AI optimization backlog</li>
+          </ul>
         </div>
       </div>
     </div>

@@ -3,27 +3,35 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { CalendarCog, FlaskConical, HardHat, KeyRound, LayoutGrid, Radar, ShieldHalf, TrainFront, Wrench } from "lucide-react";
+import { CalendarCog, FlaskConical, HardHat, KeyRound, LayoutGrid, Radar, ShieldCheck, TrainFront, Wrench, ChevronRight, Activity } from "lucide-react";
 import { getRole, setRole, ROLE_META, DEPT_LABEL, type Role, type RoleInfo } from "@/lib/role";
+import { useLang } from "@/lib/lang";
 
 const NAV = [
-  { href: "/command", label: "Command Center", icon: Radar, hint: "Live grid · fog · VIP", roles: ["DRM", "CONTROL"] },
-  { href: "/planner", label: "AI Planner", icon: CalendarCog, hint: "constraint solver", roles: ["DRM", "CONTROL"] },
-  { href: "/simulation", label: "Simulation Lab", icon: FlaskConical, hint: "What-if · crisis", roles: ["DRM", "CONTROL"] },
-  { href: "/field", label: "Field Operations", icon: HardHat, hint: "Allot · verify · sign-off", roles: ["INSPECTOR", "DRM"] },
-  { href: "/jobs", label: "My Job Portal", icon: Wrench, hint: "Job cards · photo proof", roles: ["KARMI"] },
+  { href: "/command", labelKey: "nav.command", icon: Radar, hintKey: "nav.command.hint", roles: ["DRM", "CONTROL"] },
+  { href: "/planner", labelKey: "nav.planner", icon: CalendarCog, hintKey: "nav.planner.hint", roles: ["DRM", "CONTROL"] },
+  { href: "/simulation", labelKey: "nav.simulation", icon: FlaskConical, hintKey: "nav.simulation.hint", roles: ["DRM", "CONTROL"] },
+  { href: "/field", labelKey: "nav.field", icon: HardHat, hintKey: "nav.field.hint", roles: ["INSPECTOR", "DRM"] },
+  { href: "/jobs", labelKey: "nav.jobs", icon: Wrench, hintKey: "nav.jobs.hint", roles: ["KARMI"] },
 ];
 
-const UPLINKS = ["TMS", "TDMS", "SMMS", "COA", "RDPMS", "FOIS"];
+const UPLINKS = [
+  { name: "TMS", label: "Track" },
+  { name: "TDMS", label: "Traction" },
+  { name: "SMMS", label: "Signals" },
+  { name: "COA", label: "Control" },
+  { name: "FOIS", label: "Freight" },
+  { name: "IMD", label: "Weather" },
+];
 
 export default function Sidebar() {
   const path = usePathname();
   const router = useRouter();
+  const { t } = useLang();
   const [role, setRoleState] = useState<RoleInfo | null>(null);
   const [switching, setSwitching] = useState(false);
 
   function quickSwitch(r: Role) {
-    // instant (< 500 ms) — global state swap + client-nav, no page reload
     setRole({ role: r, dept: r === "KARMI" ? (role?.dept ?? "ENG") : undefined });
     setSwitching(false);
     router.push(ROLE_META[r].dest);
@@ -40,115 +48,134 @@ export default function Sidebar() {
     };
   }, []);
 
-  const visibleNav = role ? NAV.filter((n) => n.roles.includes(role.role)) : [];
+  const visibleNav = role ? NAV.filter((n) => n.roles.includes(role.role)) : NAV.slice(0, 3);
   const meta = role ? ROLE_META[role.role] : null;
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-[234px] shrink-0 flex-col border-r border-edge/70 bg-hull/80 backdrop-blur-md lg:flex">
-      <Link href="/" className="flex items-center gap-3 border-b border-edge/70 px-5 py-4">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-saffron to-amber text-abyss">
-          <TrainFront size={19} strokeWidth={2.4} />
+    <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-edge bg-hull lg:flex">
+      {/* Brand Header */}
+      <Link href="/" className="flex items-center gap-3 border-b border-edge px-5 py-4 transition hover:bg-abyss/50">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white shadow-sm">
+          <TrainFront size={20} strokeWidth={2.2} />
         </span>
-        <span>
-          <span className="block text-[14px] font-bold tracking-[0.08em] text-ink">RAIL RAKSHAK</span>
-          <span className="block font-mono text-[8.5px] uppercase tracking-[0.2em] text-faint">NR · Delhi Division</span>
-        </span>
+        <div>
+          <span className="block text-sm font-bold tracking-tight text-ink">{t("app.name")}</span>
+          <span className="block text-[11px] font-medium text-dim">{t("app.division")}</span>
+        </div>
       </Link>
 
-      {/* role badge */}
-      <div className="border-b border-edge/70 px-3 py-3">
+      {/* Role Profile Box */}
+      <div className="border-b border-edge p-3.5">
         {role && meta ? (
-          <div className="rounded-lg border p-2.5" style={{ borderColor: `${meta.color}44`, background: `${meta.color}12` }}>
-            <p className="font-mono text-[8px] uppercase tracking-[0.2em] text-faint">Signed in as</p>
-            <p className="mt-0.5 text-[12px] font-bold" style={{ color: meta.color }}>
-              {role.role === "KARMI" && role.dept ? DEPT_LABEL[role.dept].split(" — ")[0] : meta.label}
+          <div className="rounded-xl border border-edge bg-abyss p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-medium text-faint">{t("role.active")}</span>
+              <span
+                className="inline-block h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: meta.color }}
+              />
+            </div>
+            <p className="mt-1 text-xs font-semibold text-ink">
+              {role.role === "KARMI" && role.dept ? DEPT_LABEL[role.dept].split(" — ")[0] : t(`role.${role.role.toLowerCase()}`)}
             </p>
             {role.role === "KARMI" && role.dept && (
-              <p className="font-mono text-[8.5px] text-dim">{DEPT_LABEL[role.dept].split(" — ")[1]}</p>
+              <p className="mt-0.5 text-[11px] text-dim">{DEPT_LABEL[role.dept].split(" — ")[1]}</p>
+            )}
+            <button
+              onClick={() => setSwitching(!switching)}
+              className="mt-2.5 flex w-full items-center justify-between rounded-lg border border-edge bg-hull px-2.5 py-1.5 text-[11px] font-medium text-dim hover:text-ink transition"
+            >
+              <span>{t("role.switch")}</span>
+              <ChevronRight size={13} className={switching ? "rotate-90" : ""} />
+            </button>
+            {switching && (
+              <div className="anim-rise mt-2 grid grid-cols-2 gap-1.5 border-t border-edge pt-2">
+                {(["DRM", "CONTROL", "INSPECTOR", "KARMI"] as Role[]).map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => quickSwitch(r)}
+                    className="rounded-md border border-edge bg-hull px-2 py-1.5 text-left text-[10.5px] font-medium text-dim hover:border-primary/40 hover:text-ink transition"
+                  >
+                    {r === "CONTROL" ? "COA Room" : t(`role.${r.toLowerCase()}`).split(" ")[0]}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
         ) : (
-          <Link href="/login" className="flex items-center gap-2 rounded-lg border border-amber/40 bg-amber/10 p-2.5 text-amber transition hover:bg-amber/20">
-            <KeyRound size={14} />
-            <span className="text-[12px] font-bold">Sign in to command</span>
+          <Link
+            href="/login"
+            className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 p-3 text-primary hover:bg-primary/10 transition"
+          >
+            <KeyRound size={15} />
+            <span className="text-xs font-semibold">{t("btn.select.desk")}</span>
           </Link>
         )}
       </div>
 
-      <nav className="flex flex-col gap-1.5 px-3 py-4">
-        <p className="px-2 pb-1 font-mono text-[9px] uppercase tracking-[0.22em] text-faint">Operate</p>
+      {/* Navigation Links */}
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+        <p className="px-2 pb-1.5 text-[10.5px] font-semibold tracking-wider text-faint uppercase">{t("nav.operations")}</p>
         {visibleNav.map((n) => {
           const active = path.startsWith(n.href);
           return (
             <Link
               key={n.href}
               href={n.href}
-              className={`group flex items-center gap-3 rounded-lg border px-3 py-2.5 transition ${
+              className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 transition ${
                 active
-                  ? "border-amber/30 bg-amber/10 text-amber"
-                  : "border-transparent text-dim hover:border-edge hover:bg-white/[0.03] hover:text-ink"
+                  ? "bg-primary/10 text-primary font-semibold"
+                  : "text-dim hover:bg-abyss hover:text-ink font-medium"
               }`}
             >
-              <n.icon size={16} />
-              <span>
-                <span className="block text-[12.5px] font-semibold leading-tight">{n.label}</span>
-                <span className="block font-mono text-[8.5px] uppercase tracking-wider text-faint">{n.hint}</span>
-              </span>
+              <n.icon size={17} className={active ? "text-primary" : "text-faint group-hover:text-dim"} />
+              <div className="min-w-0 flex-1">
+                <span className="block text-xs leading-snug">{t(n.labelKey)}</span>
+                <span className="block truncate text-[10px] text-faint group-hover:text-dim/80">{t(n.hintKey)}</span>
+              </div>
+              {active && <span className="h-1.5 w-1.5 rounded-full bg-primary" />}
             </Link>
           );
         })}
-        <p className="px-2 pb-1 pt-4 font-mono text-[9px] uppercase tracking-[0.22em] text-faint">Briefing</p>
-        <Link
-          href="/"
-          className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition ${
-            path === "/" ? "border-amber/30 bg-amber/10 text-amber" : "border-transparent text-dim hover:border-edge hover:bg-white/[0.03] hover:text-ink"
-          }`}
-        >
-          <LayoutGrid size={16} />
-          <span>
-            <span className="block text-[12.5px] font-semibold leading-tight">Mission Overview</span>
-            <span className="block font-mono text-[8.5px] uppercase tracking-wider text-faint">SIH 2026 · #26027</span>
-          </span>
-        </Link>
+
+        <div className="pt-4">
+          <p className="px-2 pb-1.5 text-[10.5px] font-semibold tracking-wider text-faint uppercase">{t("nav.system")}</p>
+          <Link
+            href="/"
+            className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 transition ${
+              path === "/"
+                ? "bg-primary/10 text-primary font-semibold"
+                : "text-dim hover:bg-abyss hover:text-ink font-medium"
+            }`}
+          >
+            <LayoutGrid size={17} className={path === "/" ? "text-primary" : "text-faint group-hover:text-dim"} />
+            <div className="min-w-0 flex-1">
+              <span className="block text-xs leading-snug">{t("nav.overview")}</span>
+              <span className="block truncate text-[10px] text-faint">{t("nav.overview.hint")}</span>
+            </div>
+          </Link>
+        </div>
       </nav>
 
-      <div className="mt-auto space-y-3 border-t border-edge/70 px-5 py-4">
-        <div className="flex items-center gap-2">
-          <ShieldHalf size={13} className="text-mint" />
-          <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-mint">Departmental agents · live</span>
+      {/* Connected Feeds Footer */}
+      <div className="mt-auto border-t border-edge p-4 space-y-2.5 bg-abyss/50">
+        <div className="flex items-center justify-between">
+          <span className="flex items-center gap-1.5 text-[10.5px] font-medium text-dim">
+            <Activity size={12} className="text-green-500" /> {t("feeds.title")}
+          </span>
+          <span className="flex h-1.5 w-1.5 rounded-full bg-green-500 anim-blink" />
         </div>
         <div className="grid grid-cols-3 gap-1.5">
           {UPLINKS.map((u) => (
-            <span key={u} className="flex items-center gap-1 rounded-md border border-edge/70 bg-white/[0.02] px-1.5 py-1 font-mono text-[8.5px] text-dim">
-              <span className="anim-blink h-1 w-1 rounded-full bg-mint" />
-              {u}
-            </span>
+            <div
+              key={u.name}
+              className="flex items-center justify-center rounded-md border border-edge bg-hull py-1 text-[10px] font-mono text-dim font-medium"
+              title={u.label}
+            >
+              {u.name}
+            </div>
           ))}
         </div>
-        {role && (
-          <div>
-            <button
-              onClick={() => setSwitching(!switching)}
-              className="flex w-full items-center gap-2 rounded-lg border border-edge px-2.5 py-2 font-mono text-[9px] uppercase tracking-widest text-dim transition hover:border-white/20 hover:text-ink"
-            >
-              <KeyRound size={11} /> Switch role instantly
-            </button>
-            {switching && (
-              <div className="anim-rise mt-1.5 grid grid-cols-2 gap-1">
-                {(["DRM", "CONTROL", "INSPECTOR", "KARMI"] as Role[]).map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => quickSwitch(r)}
-                    className="rounded-md border border-white/[0.08] px-1.5 py-1.5 font-mono text-[8px] font-bold transition hover:border-white/25"
-                    style={{ color: ROLE_META[r].color, background: `${ROLE_META[r].color}10` }}
-                  >
-                    {r === "CONTROL" ? "COA" : r}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </aside>
   );
