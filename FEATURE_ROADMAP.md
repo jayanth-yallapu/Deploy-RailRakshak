@@ -7,7 +7,7 @@
 > | --- | --- | --- |
 > | `npx tsc --noEmit` | 14 errors | **0 errors** |
 > | `npm run build` | failed (needs network for fonts) | **passes offline**, type-checks in-build |
-> | `node scripts/verify.mjs` | 8 / 15 | **57 / 57** |
+> | `node scripts/verify.mjs` | 8 / 15 | **64 / 64** |
 > | `node scripts/smoke.mjs` | (didn't exist) | **19 / 19** (8 pages · 5 endpoints · 5 lake checks · photo-bytes gate) |
 > | seeded lake | 10 stations · 7 sections · 0 defects · 0 assets · 0 jobs | **19 · 23 · 97 defects · 84 assets · 12 work orders · 1 opening plan** |
 >
