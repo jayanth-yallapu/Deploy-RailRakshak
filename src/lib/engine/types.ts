@@ -55,8 +55,16 @@ export interface DefectDTO {
   overdueDays: number;
   durationMin: number;
   inspectionMode: string;
+  /** false = executable live / without occupying the line (telemetry, CCTV, drone). */
+  requiresBlock: boolean;
+  /** linked fixed asset (health feeds the risk model); null when not tied to one item. */
+  assetId: number | null;
+  /** health of that asset, 0–100 (defaults to 80 when there is no asset link). */
+  assetHealth: number;
+  /** 72-hour probability of failure, 0–1 — direct output of the trained model. */
   failureProb72h: number;
   status: string;
+  /** 0–100 prioritisation score (risk + severity + overdue + section exposure). */
   aiScore: number;
 }
 

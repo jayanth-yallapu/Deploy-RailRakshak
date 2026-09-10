@@ -1,7 +1,9 @@
 import { db } from "@/db";
-import { assets, blockItems, defects, events, segments, stations } from "@/db/schema";
+import { assets, blockItems, defects, events, segments, settings, stations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { COST, DTP_RED_ZONES, fmtMin, mulberry32, trafficFactor } from "./network";
+import { predictRisk } from "./ml";
+import { severityToNum } from "./severity";
 import { segmentTrainArrivals } from "./livetrains";
 import { riskFor } from "./optimizer";
 import { ne } from "drizzle-orm";
@@ -33,6 +35,9 @@ export async function whatIf(req: WhatIfRequest): Promise<WhatIfResult> {
     .where(ne(defects.status, "closed")); // latent failure risk persists until work is done
   const assetRows = await db.select().from(assets);
   const assetById = new Map(assetRows.map((a) => [a.id, a]));
+  // fog changes both the predicted risk and the exposure of a physical gang on the line
+  const [fogRow] = await db.select().from(settings).where(eq(settings.key, "fogMode"));
+  const fogMode = fogRow?.value === "true";
 
   const durMin = req.durationH * 60;
   const b0 = req.startMin;
@@ -94,10 +99,16 @@ export async function whatIf(req: WhatIfRequest): Promise<WhatIfResult> {
     heat(seg.toCode, ambientDelay / 260);
   }
 
-  const segDefects = defs.filter((d) => assetById.get(d.assetId)?.segmentId === seg.id);
-  // trained 72-h failure risk per defect (logistic model), not the raw stored score
-  const risk = segDefects.reduce((s, d) => s + riskFor(d, assetById.get(d.assetId)?.health ?? 70, seg, false), 0);
-  const failureCostAvoided = Math.round(risk * durMin * COST.emergencyBlockPerMin * 0.5);
+  const healthOf = (assetId: number | null) => (assetId == null ? 75 : assetById.get(assetId)?.health ?? 75);
+  const segDefects = defs.filter((d) => (d.assetId == null ? null : assetById.get(d.assetId)?.segmentId) === seg.id);
+  // Trained 72-h failure risk per defect, combined properly. Summing probabilities (what this did
+  // before) can exceed 1 — so this uses P(at least one unrepaired defect fails) = 1 - Π(1 - pᵢ),
+  // which stays a real probability however many items the section is carrying.
+  const probs = segDefects.map((d) => riskFor(d, healthOf(d.assetId), seg, fogMode));
+  const pAny = 1 - probs.reduce((s, p) => s * (1 - Math.min(0.999, Math.max(0, p))), 1);
+  const failureCostAvoided = Math.round(
+    pAny * Math.min(durMin, 720) * COST.emergencyBlockPerMin * (req.superBlock ? 1.18 : 1) * 0.5
+  );
   const dieselSavings = Math.round(
     (req.superBlock ? 2.4 : 1) * affected * 6 * COST.dieselIdlePerMin * (req.superBlock ? 0.5 : 0.12)
   );
@@ -122,7 +133,7 @@ export async function whatIf(req: WhatIfRequest): Promise<WhatIfResult> {
   const verdict = recommend
     ? req.superBlock
       ? `Bundled super-block SAVES ₹${Math.abs(netBenefit).toLocaleString("en-IN")} net — shunting + idle cuts offset ${affected} delayed trains.`
-      : `Planned block prevents ₹${failureCostAvoided.toLocaleString("en-IN")} of emergency-failure exposure at a controlled cost.`
+      : `Planned block clears ${(pAny * 100).toFixed(0)}% combined 72-h failure exposure (₹${failureCostAvoided.toLocaleString("en-IN")} of emergency work avoided) at a controlled delay cost.`
     : redZoneHit
       ? `Rejected — LC gates on this section sit inside DTP red-zone; road gridlock cost exceeds rail benefit.`
       : netBenefit >= 0
@@ -179,7 +190,23 @@ export async function crossDeptConsensus(segmentId: number): Promise<ConsensusRe
   const votes = systems.map(({ system, dept }) => {
     const deptAssets = assetRows.filter((a) => a.department === dept);
     const sevSum = deptAssets.reduce(
-      (s, a) => s + defsFor(a.id).reduce((x, d) => x + d.severity * (0.7 + d.failureProb72h), 0),
+      (s, a) =>
+        s +
+        defsFor(a.id).reduce((x, d) => {
+          const sev = severityToNum(d.severity);
+          const prob = seg
+            ? predictRisk({
+                severity: sev,
+                overdueDays: d.overdueDays,
+                assetHealth: a.health,
+                dailyTrains: seg.dailyTrains,
+                criticality: seg.criticality,
+                isBridge: seg.isBridge,
+                fogSeason: false,
+              })
+            : 0;
+          return x + sev * (0.7 + prob);
+        }, 0),
       0
     );
     const healthDrag = deptAssets.reduce((s, a) => s + (100 - a.health), 0) / Math.max(deptAssets.length, 1);

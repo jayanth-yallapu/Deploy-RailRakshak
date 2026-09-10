@@ -38,7 +38,14 @@ export const segments = pgTable("segments", {
   maxSpeed: integer("max_speed").notNull().default(110),
 });
 
-/** Fixed assets (track, OHE, signalling) monitored by TMS / TDMS / SMMS. */
+/**
+ * Fixed assets (track, OHE, signalling) monitored by TMS / TDMS / SMMS.
+ *
+ * `cycleDays` + `lastInspectedAt` carry the statutory maintenance cycle for the item, which is
+ * what lets the system derive **overdue maintenance** (PS requirement 1: "defects, overdue
+ * maintenance") instead of inventing an `overdueDays` number: an asset whose age since last
+ * inspection exceeds its cycle emits an overdue work item, and the defect inherits that age.
+ */
 export const assets = pgTable("assets", {
   id: serial("id").primaryKey(),
   segmentId: integer("segment_id")
@@ -49,22 +56,45 @@ export const assets = pgTable("assets", {
   label: text("label").notNull(),
   health: real("health").notNull().default(80), // 0..100
   sourceSystem: text("source_system").notNull(), // TMS | TDMS | SMMS | ITMS | RDPMS | REMMLOT
+  cycleDays: integer("cycle_days").notNull().default(90), // statutory inspection/maintenance cycle
+  lastInspectedAt: timestamp("last_inspected_at").notNull().defaultNow(),
 });
 
-/** 
- * ✅ FIXED: Defects table – simplified to match the Patroller report.
- * Now includes: segment_id, department, title, note, status, severity, gps, photo_path.
+/**
+ * Maintenance backlog: defects raised by patrollers / TMS / TDMS / SMMS plus derived
+ * overdue-maintenance items.
+ *
+ * Field contract (this is the surface every consumer reads — engine, API, four role dashboards):
+ *   · `severity` stays a patroller-facing label; `severityToNum()` (engine/severity.ts) is the only
+ *     place it becomes a 1–10 number.
+ *   · `overdueDays`, `durationMin`, `inspectionMode` and `assetId` are what let the **trained risk
+ *     model** and the wave packer run on real data. When these were dropped during an earlier
+ *     simplification, the optimizer silently fell back to a hand-written formula and block
+ *     durations became a guessed `60 + n*30`; the columns are therefore part of the API contract,
+ *     not optional extras.
+ *   · 72-h failure probability is deliberately NOT stored — it is model output (`predictRisk`).
+ *     Storing it would freeze a stale number and let the DB disagree with the model card.
+ *
+ * Status vocabulary: open | pending | pending_allotment | allotted | scheduled | closed
+ * ("closed" is written by jobs.review on sign-off; "scheduled" by the optimizer on admission).
  */
 export const defects = pgTable("defects", {
   id: serial("id").primaryKey(),
-  segmentId: integer("segment_id"),                         // ← from the report
-  department: text("department").notNull(),                 // ENG | TRD | SNT
+  segmentId: integer("segment_id").references(() => segments.id), // null = awaiting section match
+  assetId: integer("asset_id").references(() => assets.id), // null = not tied to one asset
+  department: text("department").notNull(), // ENG | TRD | SNT
+  sourceSystem: text("source_system").notNull().default("TMS"), // TMS | TDMS | SMMS | PATROL
   title: text("title").notNull(),
   note: text("note").notNull().default(""),
-  status: text("status").notNull().default("pending"),      // pending | allotted | signed_off | rejected
-  severity: text("severity").notNull().default("medium"),   // low | medium | high | critical
-  gps: text("gps"),                                         // GPS coordinates from Patroller
-  photoPath: text("photo_path"),                            // stored photo URL
+  status: text("status").notNull().default("open"),
+  severity: text("severity").notNull().default("medium"), // low | medium | high | critical
+  overdueDays: integer("overdue_days").notNull().default(0), // age past statutory cycle (assets-derived)
+  durationMin: integer("duration_min").notNull().default(60), // on-site minutes, drives block length
+  inspectionMode: text("inspection_mode").notNull().default("physical"), // physical | virtual | remote
+  requiresBlock: boolean("requires_block").notNull().default(true), // can be done live/without a block?
+  reportedBy: text("reported_by"), // USFD car / patroller / SSE / SCADA alarm
+  gps: text("gps"), // "lat, lng" from the patroller handset
+  photoPath: text("photo_path"), // stored photo URL
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

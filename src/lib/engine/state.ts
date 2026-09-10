@@ -1,11 +1,12 @@
 import { db } from "@/db";
-import { defects, events, jobs, segments, settings, stations } from "@/db/schema";
+import { assets, defects, events, jobs, segments, settings, stations } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { ensureSeeded } from "./seed";
 import { getLatestPlan } from "./optimizer";
 import { currentWeather } from "./simulate";
 import { getLiveTrains } from "./livetrains";
-import { getModelCard } from "./ml";
+import { getModelCard, predictRisk } from "./ml";
+import { severityToNum } from "./severity";
 import type { DashboardState, DefectDTO, EventDTO, OverrunInfo, SettingsDTO, StationDTO, SegmentDTO, Department } from "./types";
 
 export async function getSettings(): Promise<SettingsDTO> {
@@ -34,43 +35,67 @@ export async function setSetting(
     });
 }
 
-/** Map severity text to a 1–10 numeric score */
-function severityToNum(s: string): number {
-  if (s === "critical") return 10;
-  if (s === "high") return 8;
-  if (s === "medium") return 5;
-  return 2; // low
-}
-
+/**
+ * Backlog items as the UI and the optimizer consume them.
+ *
+ * `failureProb72h` is **model output, 0–1 probability** (PlannerClient renders `prob * 100`%), and
+ * `aiScore` is the 0–100 prioritisation score from the same model plus section/asset context. Both
+ * are computed here, never stored, so the table can never disagree with the model card. Asset
+ * health comes from the linked asset row; `overdueDays`, `durationMin`, `inspectionMode` and
+ * `requiresBlock` come from real columns that previously did not exist.
+ */
 export async function getDefectDTOs(): Promise<DefectDTO[]> {
   await ensureSeeded();
-  const [defectRows, segRows] = await Promise.all([
+  const [defectRows, segRows, assetRows] = await Promise.all([
     db.select().from(defects),
     db.select().from(segments),
+    db.select().from(assets),
   ]);
   const segById = new Map(segRows.map((s) => [s.id, s]));
+  const assetById = new Map(assetRows.map((a) => [a.id, a]));
+  const fogMode = (await getSettings()).fogMode;
 
   return defectRows.map((d) => {
     const seg = d.segmentId ? segById.get(d.segmentId) : null;
+    const asset = d.assetId ? assetById.get(d.assetId) : null;
     const sevNum = severityToNum(d.severity);
-    // Simple risk estimate from severity + segment criticality
-    const critFactor = seg ? seg.criticality / 10 : 0.5;
-    const prob = Math.min(0.99, (sevNum / 10) * 0.6 + critFactor * 0.4);
-    const aiScore = Math.round(prob * 100);
+    const health = asset?.health ?? 80;
+    const failureProb72h = seg
+      ? predictRisk({
+          severity: sevNum,
+          overdueDays: d.overdueDays,
+          assetHealth: health,
+          dailyTrains: seg.dailyTrains,
+          criticality: seg.criticality,
+          isBridge: seg.isBridge,
+          fogSeason: fogMode,
+        })
+      : 0;
+    // priority = severity, predicted risk, how overdue, section criticality, traffic exposure
+    const aiScore = Math.round(
+      0.3 * sevNum * 10 +
+        0.3 * failureProb72h * 100 +
+        0.12 * Math.min(d.overdueDays / 30, 1) * 100 +
+        0.16 * (seg?.criticality ?? 5) * 10 +
+        0.12 * Math.min((seg?.dailyTrains ?? 60) / 4, 100) * 1
+    );
     return {
       id: d.id,
       segmentId: d.segmentId ?? 0,
       segmentCode: seg?.code ?? "?",
       department: d.department as Department,
-      sourceSystem: d.department === "ENG" ? "TMS" : d.department === "TRD" ? "TDMS" : "SMMS",
+      sourceSystem: d.sourceSystem,
       title: d.title,
       severity: sevNum,
-      overdueDays: 0,
-      durationMin: 60,
-      inspectionMode: "physical",
-      failureProb72h: Math.round(prob * 100),
+      overdueDays: d.overdueDays,
+      durationMin: d.durationMin,
+      inspectionMode: d.inspectionMode,
+      requiresBlock: d.requiresBlock,
+      assetId: d.assetId,
+      assetHealth: Math.round(health),
+      failureProb72h,
       status: d.status,
-      aiScore,
+      aiScore: Math.max(0, Math.min(100, aiScore)),
     };
   });
 }
@@ -97,7 +122,7 @@ export async function getEvents(): Promise<EventDTO[]> {
 
 export async function getDashboardState(): Promise<DashboardState> {
   await ensureSeeded();
-  const [stationRows, segmentRows, settingsRow, defectDTOs, eventsList, latestPlan, activeJobs] =
+  const [stationRows, segmentRows, settingsRow, defectDTOs, eventsList, latestPlan, activeJobs, assetHealthRows] =
     await Promise.all([
       db.select().from(stations),
       db.select().from(segments),
@@ -106,6 +131,7 @@ export async function getDashboardState(): Promise<DashboardState> {
       getEvents(),
       getLatestPlan(),
       db.select().from(jobs).where(eq(jobs.status, "IN_PROGRESS")),
+      db.select({ id: assets.id, health: assets.health }).from(assets),
     ]);
 
   const stationsDto: StationDTO[] = stationRows.map((s) => ({
@@ -138,12 +164,14 @@ export async function getDashboardState(): Promise<DashboardState> {
   const openStatuses = new Set(["pending", "open", "pending_allotment", "allotted"]);
   const openDefects = defectDTOs.filter((d) => openStatuses.has(d.status.toLowerCase()));
   const criticalDefects = openDefects.filter((d) => d.severity >= 8);
-  const virtualInspections = 0; // no inspectionMode column in new schema
+  // items executable without occupying the line (CCTV / drone / telemetry) — a real lever for
+  // availability, since every one of these is a block that never has to be taken.
+  const virtualInspections = openDefects.filter((d) => d.inspectionMode !== "physical" || !d.requiresBlock).length;
 
   const depts: Department[] = ["ENG", "TRD", "SNT"];
   const deptLoad = depts.map((dept) => {
     const dList = openDefects.filter((d) => d.department === dept);
-    const avgFail = dList.length ? dList.reduce((acc, d) => acc + d.failureProb72h, 0) / (dList.length * 100) : 0;
+    const avgFail = dList.length ? dList.reduce((acc, d) => acc + d.failureProb72h, 0) / dList.length : 0;
     return {
       dept,
       open: dList.length,
@@ -175,17 +203,24 @@ export async function getDashboardState(): Promise<DashboardState> {
   const weather = currentWeather(settingsRow.fogMode);
   const modelCard = getModelCard();
 
-  // Pull KPIs from latestPlan if available, otherwise use sensible defaults
-  const planKpis = latestPlan?.kpis ?? {};
-  const resilienceScore = latestPlan?.resilienceScore ?? 77.8;
+  /**
+   * KPIs are read from the published plan — and only from the published plan.
+   *
+   * There used to be hardcoded fallbacks here (91.9 / 51.1 / 56 / 7.0 / 15 / 77.8) that the UI
+   * displayed as if they were measurements whenever no plan existed. Every one of those numbers has
+   * been removed: a zero now means "no plan has been generated yet", which is the truth, and the
+   * landing page labels it as such instead of quietly inventing a result.
+   */
+  const planKpis = (latestPlan?.kpis ?? {}) as Record<string, number>;
+  const num = (key: string, fallback = 0) => (typeof planKpis[key] === "number" ? planKpis[key] : fallback);
 
   const kpis = {
-    downtimeBaselineH: (planKpis as Record<string, number>).downtimeBaselineH ?? 91.9,
-    downtimeOptimizedH: (planKpis as Record<string, number>).downtimeOptimizedH ?? 51.1,
-    bundlingPct: (planKpis as Record<string, number>).bundlingPct ?? 56,
-    avgDelayMin: (planKpis as Record<string, number>).avgDelayMin ?? 7.0,
-    resilienceScore,
-    conflictsAvoided: (planKpis as Record<string, number>).conflictsAvoided ?? 15,
+    downtimeBaselineH: num("downtimeBaselineH"),
+    downtimeOptimizedH: num("downtimeOptimizedH"),
+    bundlingPct: num("bundlingPct"),
+    avgDelayMin: num("avgDelayMin"),
+    resilienceScore: latestPlan?.resilienceScore ?? 0,
+    conflictsAvoided: num("conflictsAvoided"),
   };
 
   return {
@@ -195,7 +230,7 @@ export async function getDashboardState(): Promise<DashboardState> {
     counts: {
       openDefects: openDefects.length,
       criticalDefects: criticalDefects.length,
-      assetsBelowHealth: 0,
+      assetsBelowHealth: assetHealthRows.filter((a) => a.health < 60).length,
       virtualInspections,
     },
     deptLoad,
