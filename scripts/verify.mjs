@@ -96,6 +96,131 @@ const wi2 = await post("/api/whatif", { segmentId: bridge.id, durationH: 2, star
 ok("whatif: golden-window super-block recommended", wi2.recommend === true, `net ₹${wi2.netBenefit}`);
 ok("whatif: failure exposure is a probability (≤100%)", (wi.futureFailureCostAvoided > 0), `exposure avoided ₹${wi.futureFailureCostAvoided.toLocaleString("en-IN")}`);
 
+// ---- KPI contract: three producers must publish the same keys (a missing one reads as `undefined`) ----
+{
+  const fs = await import("node:fs");
+  const src = fs.readFileSync(new URL("../src/lib/engine/optimizer.ts", import.meta.url), "utf8");
+  const keysOf = (from, after) => {
+    const i = after ? src.indexOf(from, src.indexOf(after)) : src.indexOf(from);
+    if (i < 0) return [];
+    let d = 0, j = src.indexOf("{", i);
+    const start = j;
+    do {
+      if (src[j] === "{") d++;
+      else if (src[j] === "}") d--;
+      j++;
+    } while (d > 0);
+    return [...src.slice(start, j).matchAll(/^\s+([a-zA-Z0-9]+):/gm)].map((m) => m[1]);
+  };
+  // runOptimizer's literal is the first `const kpis = {` after its declaration
+  const runK = keysOf("const kpis = {", "export async function runOptimizer");
+  const rollK = keysOf("const kpis = {", "export async function runRollingPlan");
+  const emptyK = keysOf("kpis: {", "async function emptyPlan");
+  const union = [...new Set([...runK, ...rollK])];
+  const missing = union.filter((x) => !emptyK.includes(x));
+  ok(
+    "kpi contract: the empty-plan shape carries every key the two planners publish",
+    runK.length > 15 && missing.length === 0,
+    missing.length ? `emptyPlan lacks ${missing.join(", ")}` : `${union.length} keys, all zero-filled`
+  );
+}
+
+// ---- block rule book: live compliance, the approval gate, and the audit note ----
+await resetLake();
+const pol0 = await fetch(`${base}/api/policy`).then(j);
+ok("rule book: our own generated plan passes every hard rule", pol0.hardViolations === 0 && pol0.score >= 97, pol0.summary);
+ok(
+  "rule book: every rule states the clause it enforces",
+  pol0.rules.length >= 7 && pol0.rules.every((r) => r.clause.length > 40 && (r.severity === "hard" || r.severity === "soft")),
+  `${pol0.rules.length} rules · ${pol0.activeRuleIds.join("/")} live, ${pol0.dormantRuleIds.join("/")} dormant`
+);
+const victim = pol0.blocks[2];
+const badDrag = await (
+  await fetch(`${base}/api/blocks`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: victim.id, startMin: 540, endMin: 780 }),
+  })
+).json();
+ok(
+  "rule book: a drag into traffic hours is caught on the spot",
+  badDrag.ok === true && (badDrag.policy?.violations ?? []).some((x) => x.startsWith("WINDOW")) && badDrag.publishBlocked === true,
+  `${badDrag.policy?.violations.length} breach(es) on that block after the edit`
+);
+ok(
+  "rule book: one bad night is reported on every block sharing it (budget is a day-level rule)",
+  badDrag.planPolicy.hardViolations >= 1,
+  badDrag.planPolicy.summary
+);
+const polMid = await fetch(`${base}/api/policy`).then(j);
+const flagged = polMid.blocks.filter((b) => b.policy.violations.length > 0);
+ok(
+  "rule book: the stored plan reflects the edit, not the state at generation time",
+  flagged.length >= 1 && flagged.some((b) => b.id === victim.id),
+  `${flagged.length} block(s) now flagged`
+);
+const explMoved = await fetch(`${base}/api/explain?blockItemId=${victim.id}`).then(j);
+ok("explain: a hand-edited block says so instead of pretending it still matches the reasoning", explMoved.editedByHuman === true, `placed ${explMoved.generated.chosen.startMin}→${explMoved.now.startMin} min`);
+const gateRefused = await fetch(`${base}/api/veto`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ mode: "APPROVED" }),
+});
+const gateBody = await gateRefused.json();
+ok("approval gate: a non-compliant plan cannot be published", gateRefused.status === 409 && gateBody.breaches.length >= 1, gateBody.error);
+const gateOverBody = await post("/api/veto", { mode: "APPROVED", overrideReason: "Verify harness exemption — test of the override path" });
+ok("approval gate: a named override reason is the only way through, and it is recorded", gateOverBody.ok === true, `stored on ${gateBody.breaches.length} block(s) + audit event`);
+const polOver = await fetch(`${base}/api/policy`).then(j);
+ok(
+  "approval gate: an override does not rewrite the verdict — the breach is still visible",
+  polOver.hardViolations >= 1 && polOver.blocks.some((b) => b.overrideReason),
+  `${polOver.blocks.filter((b) => b.overrideReason).length} block(s) carry the override note`
+);
+await fetch(`${base}/api/blocks`, {
+  method: "PATCH",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ id: victim.id, startMin: 30, endMin: 150 }),
+}).then((r) => r.json());
+const polRestored = await fetch(`${base}/api/policy`).then(j);
+ok(
+  "rule book: moving the block back clears the breach and the stale override note",
+  polRestored.hardViolations === 0 && polRestored.blocks.every((b) => !b.overrideReason),
+  polRestored.summary
+);
+await post("/api/veto", { mode: "PROPOSED" });
+
+const expl = await fetch(`${base}/api/explain?blockItemId=${polRestored.blocks[0].id}`).then(j);
+ok("explain: every block carries the reasons the search actually used", (expl.generated?.why?.length ?? 0) >= 4, `${expl.generated.why.length} reasons · driver ${expl.generated.drivingDefect.title.slice(0, 26)}`);
+const termSum = Math.round(expl.generated.terms.reduce((a, t) => a + t.value, 0));
+ok(
+  "explain: objective terms sum to the score the planner ranked on",
+  Math.abs(termSum - expl.generated.drivingDefect.score) <= 1,
+  `Σ${termSum} vs score ${expl.generated.drivingDefect.score}`
+);
+ok("explain: the runner-up placement is reported with a like-for-like gap", !!expl.generated.runnerUp?.label && expl.generated.runnerUp.penaltyVsChosen >= 0, `${expl.generated.runnerUp.label} +${expl.generated.runnerUp.penaltyVsChosen}`);
+ok(
+  "explain: the occupancy budget quoted for the block is inside the division's limit",
+  expl.generated.budget.usedMin <= expl.generated.budget.limitMin && expl.generated.budget.usedMin > 0,
+  `${expl.generated.budget.usedMin}/${expl.generated.budget.limitMin} min on D+${expl.generated.budget.day}`
+);
+await post("/api/mode", { key: "vipAlert", value: true });
+const polVip = await fetch(`${base}/api/policy`).then(j);
+ok(
+  "rule book: a VVIP notification after publication lights the affected blocks up",
+  polVip.hardViolations > 0 && polVip.blocks.some((b) => b.policy.violations.some((x) => x.startsWith("VVIP"))),
+  `${polVip.blocks.filter((b) => b.policy.violations.some((x) => x.startsWith("VVIP"))).length} block(s) on the exclusive corridor`
+);
+const gateVip = await fetch(`${base}/api/veto`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "APPROVED" }) });
+ok("rule book: and publication is refused until they move", gateVip.status === 409);
+await post("/api/mode", { key: "vipAlert", value: false });
+await post("/api/veto", { mode: "PROPOSED" });
+const moneyState = await fetch(`${base}/api/state`).then(j);
+ok(
+  "dashboard money figure is derived, not typed in: train-minutes saved is measured and positive",
+  (moneyState.kpis.baselineDelayTrainMin ?? 0) > (moneyState.kpis.delayTrainMin ?? 0) && (moneyState.kpis.delayTrainMin ?? 0) > 0,
+  `${moneyState.kpis.baselineDelayTrainMin} → ${moneyState.kpis.delayTrainMin} train-min per cycle (₹420/train-min)`
+);
+
 // ---- evidence benchmark (AI vs simulated divisional meeting) ----
 await resetLake();
 const before = await fetch(`${base}/api/state`).then(j);

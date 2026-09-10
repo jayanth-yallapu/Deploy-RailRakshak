@@ -221,6 +221,8 @@ export async function getDashboardState(): Promise<DashboardState> {
     avgDelayMin: num("avgDelayMin"),
     resilienceScore: latestPlan?.resilienceScore ?? 0,
     conflictsAvoided: num("conflictsAvoided"),
+    delayTrainMin: num("delayTrainMin"),
+    baselineDelayTrainMin: num("baselineDelayTrainMin"),
   };
 
   return {

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { BadgeCheck, BrainCircuit, ChevronRight, Clock3, Cpu, FileCheck2, Layers, Loader2, Play, Sparkles, X, ShieldAlert } from "lucide-react";
 import GanttChart from "@/components/GanttChart";
+import PolicyLedger from "@/components/PolicyLedger";
+import BlockExplain from "@/components/BlockExplain";
 import { DEPT_COLORS, fmtMin } from "@/lib/engine/network";
 import { getRole } from "@/lib/role";
 import type { DashboardState, DefectDTO, OptimizeResponse, PlanDTO, SafetyOrderDTO } from "@/lib/engine/types";
@@ -103,6 +105,32 @@ export default function PlannerClient({ initial }: { initial: DashboardState }) 
   const [isDrm, setIsDrm] = useState(false);
   const [approveBusy, setApproveBusy] = useState(false);
   const [resizeInfo, setResizeInfo] = useState<{ delayCostMin: number; affected: number; startMin: number; endMin: number } | null>(null);
+  /** Set when a drag made a block non-compliant — the ledger strip quotes it verbatim. */
+  const [planBreach, setPlanBreach] = useState<string | null>(null);
+  /** 409 payload from the approval gate: nothing publishes until this is resolved or overridden. */
+  const [gate, setGate] = useState<{ breaches: { blockItemId: number; segmentCode: string; when: string; violations: string[] }[]; policyScore: number } | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
+
+  async function approve(override?: string) {
+    setApproveBusy(true);
+    try {
+      const res = await fetch("/api/veto", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "APPROVED", overrideReason: override }),
+      });
+      const d = await res.json();
+      if (res.status === 409) {
+        setGate({ breaches: d.breaches ?? [], policyScore: d.policyScore ?? 0 });
+        return;
+      }
+      setGate(null);
+      setOverrideReason("");
+      await refreshState();
+    } finally {
+      setApproveBusy(false);
+    }
+  }
 
   useEffect(() => {
     setIsDrm(getRole()?.role === "DRM");
@@ -157,7 +185,21 @@ export default function PlannerClient({ initial }: { initial: DashboardState }) 
       const d = await res.json();
       if (d.ok) {
         setResizeInfo({ delayCostMin: d.delayCostMin, affected: d.affected, startMin: d.startMin, endMin: d.endMin });
-        setPlan((p) => (p ? { ...p, blocks: p.blocks.map((b) => (b.id === id ? { ...b, delayCostMin: d.delayCostMin } : b)) } : p));
+        // The server re-ran the rule book over the whole plan after the drag (moving one party can
+        // break the gap for its neighbour), so the chips and the ledger come from that verdict
+        // instead of being re-derived in the browser from a second copy of the rules.
+        setPlan((p) =>
+          p
+            ? {
+                ...p,
+                blocks: p.blocks.map((b) =>
+                  b.id === id ? { ...b, startMin: d.startMin, endMin: d.endMin, delayCostMin: d.delayCostMin, policy: d.policy } : b
+                ),
+                policy: p.policy && d.planPolicy ? { ...p.policy, ...d.planPolicy } : p.policy,
+              }
+            : p
+        );
+        setPlanBreach(d.publishBlocked ? d.policy?.violations?.[0] ?? "policy breach" : null);
         refreshState();
       }
     } catch {
@@ -211,15 +253,7 @@ export default function PlannerClient({ initial }: { initial: DashboardState }) 
 
             {isDrm && plan && state.settings.planStatus !== "APPROVED" && (
               <button
-                onClick={async () => {
-                  setApproveBusy(true);
-                  try {
-                    await fetch("/api/veto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "APPROVED" }) });
-                    await refreshState();
-                  } finally {
-                    setApproveBusy(false);
-                  }
-                }}
+                onClick={() => approve()}
                 disabled={approveBusy}
                 className="flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3.5 py-2 text-xs font-semibold text-emerald-400 transition hover:bg-emerald-500/25 disabled:opacity-50"
               >
@@ -272,6 +306,17 @@ export default function PlannerClient({ initial }: { initial: DashboardState }) 
           </div>
         </div>
       </section>
+
+      <PolicyLedger
+        plan={plan}
+        blocks={plan?.blocks ?? []}
+        dragBreach={planBreach}
+        gate={gate}
+        overrideReason={overrideReason}
+        setOverrideReason={setOverrideReason}
+        onOverride={(r) => approve(r)}
+        busy={approveBusy}
+      />
 
       {/* Analytics Summary */}
       {plan && k && (
@@ -371,6 +416,9 @@ export default function PlannerClient({ initial }: { initial: DashboardState }) 
             </p>
           )}
         </div>
+
+        {/* Clicking a bar asks the server what it knows about that block — no client-side guesswork. */}
+        {plan && selectedBlock != null && <BlockExplain blockItemId={selectedBlock} />}
 
         {resizeInfo && (
           <div className="anim-rise mx-4 mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-2.5 text-xs">

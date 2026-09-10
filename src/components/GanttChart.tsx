@@ -185,6 +185,34 @@ export default function GanttChart({ blocks, week, selectedId, onSelect, onResiz
                       strokeDasharray="3 3"
                     />
                   )}
+                  {/* Compliance frame: the rule-engine verdict travels with the block, so a plan that
+                      has been dragged into a breach shows it here, on the chart the crews look at. */}
+                  {(b.policy?.violations.length ?? 0) > 0 && (
+                    <rect
+                      x={bx - 2}
+                      y={TOP + ri * ROW_H + 3}
+                      width={bw + 4}
+                      height={ROW_H - 10}
+                      rx="7"
+                      fill="none"
+                      stroke="#f43f5e"
+                      strokeWidth="2"
+                      className="anim-blink"
+                    />
+                  )}
+                  {(b.policy?.violations.length ?? 0) === 0 && (b.policy?.warnings.length ?? 0) > 0 && (
+                    <rect
+                      x={bx - 2}
+                      y={TOP + ri * ROW_H + 3}
+                      width={bw + 4}
+                      height={ROW_H - 10}
+                      rx="7"
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth="1.25"
+                      strokeDasharray="3 3"
+                    />
+                  )}
                   <rect
                     x={bx}
                     y={TOP + ri * ROW_H + 5}
@@ -196,7 +224,20 @@ export default function GanttChart({ blocks, week, selectedId, onSelect, onResiz
                     stroke={selected || dragging ? "#fff" : "rgba(10, 14, 23, 0.8)"}
                     strokeWidth={dragging ? 1.5 : 1}
                     onClick={() => !dragging && onSelect?.(b.id)}
-                  />
+                  >
+                    <title>
+                      {`${b.segmentCode} · D+${b.day} ${fmtMin(b.startMin)}–${fmtMin(b.endMin)} · ${b.departments.join("+")} · ${b.defectCount} defect(s) · ${Math.round(b.delayCostMin)} train-min delay`}
+                      {(b.policy?.violations.length ?? 0) > 0 ? `\nPOLICY BREACH: ${b.policy!.violations.join("; ")}` : ""}
+                      {(b.policy?.warnings.length ?? 0) > 0 ? `\nAdvisory: ${b.policy!.warnings.join("; ")}` : ""}
+                      {b.overrideReason ? `\nOverridden by DRM: ${b.overrideReason}` : ""}
+                      {"\nClick for why this block was placed here."}
+                    </title>
+                  </rect>
+                  {(b.policy?.violations.length ?? 0) > 0 && (
+                    <text x={bx + bw - 7} y={TOP + ri * ROW_H + 17} textAnchor="middle" fontSize="11" fontWeight="700" fill="#fecdd3">
+                      !
+                    </text>
+                  )}
                   {bw > 50 && (
                     <text
                       x={bx + 6}

@@ -82,6 +82,9 @@ export interface BlockItemDTO {
   mode: string;
   window: string;
   delayCostMin: number;
+  /** Rule-engine verdict for this block, recomputed whenever the plan is read. */
+  policy?: { score: number; violations: string[]; warnings: string[] } | null;
+  overrideReason?: string | null;
 }
 
 export interface PlanDTO {
@@ -91,6 +94,15 @@ export interface PlanDTO {
   createdAt: string;
   resilienceScore: number;
   kpis: Record<string, number>;
+  /** Plan-level compliance summary (block-policy engine). */
+  policy?: {
+    score: number;
+    compliantBlocks: number;
+    hardViolations: number;
+    softWarnings: number;
+    summary: string;
+    rules: { id: string; label: string; clause: string; severity: "hard" | "soft" }[];
+  };
   blocks: BlockItemDTO[];
 }
 
@@ -163,6 +175,9 @@ export interface DashboardState {
     avgDelayMin: number;
     resilienceScore: number;
     conflictsAvoided: number;
+    /** Train-minutes of delay, plan vs the sequential-silo baseline — the money figure's only input. */
+    delayTrainMin: number;
+    baselineDelayTrainMin: number;
   };
   weather: { tempC: number; visibilityM: number; humidityPct: number; fogRisk: string };
   modelCard: {

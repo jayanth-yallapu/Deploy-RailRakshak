@@ -19,6 +19,7 @@
  */
 import { db } from "@/db";
 import { assets, blockItems, defects, events, plans, segments, settings } from "@/db/schema";
+import { evaluatePlanPolicy, maxBlockMinutes } from "./policy";
 import { and, desc, eq, inArray, ne, notInArray } from "drizzle-orm";
 import { mulberry32, trafficFactor } from "./network";
 import { predictRisk } from "./ml";
@@ -224,11 +225,28 @@ export async function loadLake() {
   };
 }
 
-const VIP_STATIONS = new Set(["DLI", "NDLS", "NZM"]);
+export const VIP_STATIONS = new Set(["DLI", "NDLS", "NZM"]);
 
 type SegRow = typeof segments.$inferSelect;
 
 type SegmentLite = { id: number; code: string; dailyTrains: number };
+
+/**
+ * The audit note a block carries. Everything here is a quantity the solver actually used while
+ * placing the block — nothing is written afterwards by hand — which is what makes "why this block,
+ * here, at this time?" answerable without re-running the search.
+ */
+export interface BlockExplanation {
+  why: string[];
+  /** The objective terms of the defect that drove the section, so the ranking is inspectable. */
+  terms: { name: string; value: number }[];
+  drivingDefect: { id: number; title: string; score: number; severity: number; risk: number };
+  chosen: { day: number; startMin: number; endMin: number; window: string; delayCostMin: number; affectedTrains: number };
+  /** The cheapest placement that was examined and rejected, straight from the search. */
+  runnerUp: { label: string; cost: number; penaltyVsChosen: number } | null;
+  budget: { day: number; usedMin: number; limitMin: number };
+  bundling: { departments: string[]; separateBlockMin: number; bundledBlockMin: number; savedMin: number };
+}
 
 export interface Candidate {
   d: DefectRow;
@@ -289,9 +307,11 @@ interface DraftBlock {
   delayCostMin: number;
   estAffected: number;
   /** The cheapest placement that was rejected: what the explain panel quotes as the runner-up. */
-  alternatives: { startMin: number; cost: number; label?: string }[];
+  alternatives: { startMin: number; cost: number; penalty?: number; label?: string }[];
   /** Benchmark bookkeeping: which working unit produced this block. */
   unitKey?: string;
+  /** Why this block exists, in this slot, at this length — see `BlockExplanation`. */
+  explain?: BlockExplanation;
 }
 
 function overlaps(a0: number, a1: number, b0: number, b1: number) {
@@ -365,7 +385,17 @@ function placeBlock(
     window: best.window,
     delayCostMin: Math.round(best.delay * 10) / 10,
     estAffected: Math.max(1, best.affected),
-    alternatives: [{ startMin: -1, cost: Math.round(second.cost * 10) / 10, label: second.label }],
+    // `cost` is the runner-up's objective value; `penalty` is the gap to what was chosen. Both sides
+    // of that subtraction are objective totals — comparing the runner-up's total against the chosen
+    // block's *delay* figure (which is what this did first) produced a flattering, meaningless gap.
+    alternatives: [
+      {
+        startMin: -1,
+        cost: Math.round(second.cost * 10) / 10,
+        penalty: Math.max(0, Math.round((second.cost - best.total) * 10) / 10),
+        label: second.label,
+      },
+    ],
   };
 }
 
@@ -638,7 +668,11 @@ export function planPool(
   for (const u of ordered) {
     const tasks = u.list.map((c) => ({ id: c.d.id, department: c.d.department, durationMin: c.d.durationMin }));
     const { makespan, byDept } = packWaves(tasks);
-    const dur = Math.max(45, Math.min(GOLDEN_CAP, Math.round((makespan + SETUP_MIN) * pad)));
+    // Two ceilings, and both bind: the golden window's usable minutes, and the longest occupation the
+    // rule book grants the departments doing the work. Clamping only to the window is what once let a
+    // 215-min ENG-only block through — the generator then failed its own compliance check.
+    const deptCap = maxBlockMinutes(Object.keys(byDept));
+    const dur = Math.max(45, Math.min(GOLDEN_CAP, deptCap, Math.round((makespan + SETUP_MIN) * pad)));
     const maxSev = Math.max(...u.list.map((c) => c.scored.severity));
     const b = conventional
       ? placeConventional(u.seg, dur, days, busy, dayBudgetLeft, deptDayUsed, u.dept, rng, () => (arbitrations += 1))
@@ -653,6 +687,54 @@ export function planPool(
     b.isSuperBlock = b.departments.length >= 2;
     b.mode = opts.fogMode ? "virtual" : "physical";
     b.unitKey = unitKey(u);
+
+    // ---- audit note: the numbers the search actually traded off ----
+    const driver = [...u.list].sort((a, c) => c.scored.score - a.scored.score)[0];
+    const separateMin = Object.values(byDept).reduce((t, m) => t + m + SETUP_MIN, 0);
+    const runner = b.alternatives[0];
+    const why = [
+      `${driver.scored.score} priority: ${driver.d.title}`,
+      `${u.list.length} open item${u.list.length === 1 ? "" : "s"} on ${u.seg.code} grouped into one occupation`,
+      `${b.window} slot — ${b.delayCostMin} train-minutes of delay across ~${Math.round(b.estAffected)} trains`,
+      `block length = longest department chain (${makespan} min) + ${SETUP_MIN} min lock-on`,
+    ];
+    if (separateMin > dur) why.push(`bundling saves ${separateMin - dur} min of line occupation vs booking separately`);
+    if (runner?.label) {
+      const gap = runner.penalty ?? 0;
+      why.push(
+        gap >= 1
+          ? `next best slot ${runner.label} cost ${Math.round(gap)} more, so it lost`
+          : `next best slot ${runner.label} was effectively tied (${Math.round(gap)} units) — the golden window wins the tie-break`
+      );
+    }
+    if (maxSev >= 8) why.push(`carries a severity-${maxSev} item: cannot wait for a cleaner night`);
+    b.explain = {
+      why,
+      terms: driver.scored.contributions,
+      drivingDefect: { id: driver.d.id, title: driver.d.title, score: driver.scored.score, severity: driver.scored.severity, risk: driver.scored.risk },
+      chosen: {
+        day: b.day,
+        startMin: b.startMin,
+        endMin: b.endMin,
+        window: b.window,
+        delayCostMin: b.delayCostMin,
+        affectedTrains: Math.round(b.estAffected),
+      },
+      runnerUp: runner?.label
+        ? { label: runner.label, cost: Math.round(runner.cost * 10) / 10, penaltyVsChosen: runner.penalty ?? 0 }
+        : null,
+      budget: {
+        day: b.day,
+        usedMin: DAILY_OCCUPANCY_BUDGET_MIN - dayBudgetLeft[b.day],
+        limitMin: DAILY_OCCUPANCY_BUDGET_MIN,
+      },
+      bundling: {
+        departments: b.departments,
+        separateBlockMin: separateMin,
+        bundledBlockMin: dur,
+        savedMin: Math.max(0, separateMin - dur),
+      },
+    };
     drafts.push(b);
   }
 
@@ -720,6 +802,18 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
   const span = Math.max(samples[RUNS - 1] - lo, 1);
   for (const v of samples) hist[Math.min(7, Math.floor(((v - lo) / span) * 8))] += 1;
 
+  const rollScore = scorePlan(
+    drafts.map((b) => ({
+      segId: b.segmentId,
+      day: b.day,
+      startMin: b.startMin,
+      endMin: b.endMin,
+      dailyTrains: lake.segById.get(b.segmentId)?.dailyTrains ?? 60,
+      depts: b.departments,
+    })),
+    lake.segById.size
+  );
+
   const kpis = {
     downtimeBaselineH: Math.round((baseline.downtimeMin / 60) * 10) / 10,
     downtimeOptimizedH: Math.round((optimMin / 60) * 10) / 10,
@@ -736,6 +830,8 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
     bundlingHoursSaved: Math.round(((baseline.downtimeMin - optimMin) / 60) * 10) / 10,
     defectsCleared: drafts.reduce((s, b) => s + b.defectIds.length, 0),
     deferredItems,
+    delayTrainMin: Math.round(totalDelay),
+    baselineDelayTrainMin: Math.round(baseline.delayMin),
     occupancyBudgetMin: days * DAILY_OCCUPANCY_BUDGET_MIN,
     occupancyUsedMin: days * DAILY_OCCUPANCY_BUDGET_MIN - dayBudgetLeft.reduce((a, b) => a + b, 0),
     noBlockExecuted: noBlock.length,
@@ -771,10 +867,14 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
         mode: b.mode,
         window: b.window,
         delayCostMin: b.delayCostMin,
+        explain: (b.explain ?? null) as Record<string, unknown> | null,
       }))
     );
     const allIds = drafts.flatMap((b) => b.defectIds);
     await db.update(defects).set({ status: "scheduled", updatedAt: new Date() }).where(inArray(defects.id, allIds));
+    // Compliance is evaluated on the stored rows, not on the drafts: the rows are what the crews
+    // will actually be signed out against.
+    await publishPolicy(plan.id);
     // This is a full-cycle plan, so it is authoritative: anything still flagged as allocated that the
     // new plan did not place goes back to the unallocated pool, keeping `status` an honest mirror of
     // the current plan rather than a log of every plan ever run.
@@ -884,6 +984,18 @@ export async function runRollingPlan(): Promise<OptimizeResponse> {
   const span = Math.max(samples[RUNS - 1] - samples[0], 1);
   for (const v of samples) hist[Math.min(7, Math.floor(((v - samples[0]) / span) * 8))] += 1;
 
+  const rollScore = scorePlan(
+    drafts.map((b) => ({
+      segId: b.segmentId,
+      day: b.day,
+      startMin: b.startMin,
+      endMin: b.endMin,
+      dailyTrains: lake.segById.get(b.segmentId)?.dailyTrains ?? 60,
+      depts: b.departments,
+    })),
+    lake.segById.size
+  );
+
   const kpis = {
     downtimeBaselineH: Math.round((baseline.downtimeMin / 60) * 10) / 10,
     downtimeOptimizedH: Math.round((optimMin / 60) * 10) / 10,
@@ -903,6 +1015,12 @@ export async function runRollingPlan(): Promise<OptimizeResponse> {
     suspendedByFog: lake.fogMode ? suspendedFog : 0,
     withheldByVip: lake.vipAlert ? withheldVip : 0,
     conflictsAvoided: baseline.conflicts,
+    aiConflicts: rollScore.conflicts,
+    coveragePct: rollScore.coveragePct,
+    baselineCoveragePct: baseline.coveragePct,
+    bundlingHoursSaved: Math.round(((baseline.downtimeMin - optimMin) / 60) * 10) / 10,
+    delayTrainMin: Math.round(totalDelay),
+    baselineDelayTrainMin: Math.round(baseline.delayMin),
     h0: hist[0], h1: hist[1], h2: hist[2], h3: hist[3], h4: hist[4], h5: hist[5], h6: hist[6], h7: hist[7],
   };
 
@@ -925,6 +1043,7 @@ export async function runRollingPlan(): Promise<OptimizeResponse> {
         mode: b.mode,
         window: b.window,
         delayCostMin: b.delayCostMin,
+        explain: (b.explain ?? null) as Record<string, unknown> | null,
       }))
     );
     await db
@@ -963,7 +1082,9 @@ async function emptyPlan(horizon: string, why: string): Promise<PlanDTO> {
     .values({
       name: `${horizon} Plan — Delhi NCR (${why})`,
       horizon,
-      resilienceScore: 99,
+      // Nothing was scheduled, so there is no variance to measure: 0, not a flattering 99. The
+      // dashboard only reads this when the plan has blocks in it.
+      resilienceScore: 0,
       kpis: {
         downtimeBaselineH: 0,
         downtimeOptimizedH: 0,
@@ -981,12 +1102,94 @@ async function emptyPlan(horizon: string, why: string): Promise<PlanDTO> {
         suspendedByFog: 0,
         withheldByVip: 0,
         conflictsAvoided: 0,
+        aiConflicts: 0,
+        coveragePct: 0,
+        baselineCoveragePct: 0,
+        bundlingHoursSaved: 0,
+        delayTrainMin: 0,
+        baselineDelayTrainMin: 0,
+        policyScore: 100,
+        policyCompliantBlocks: 0,
+        policyViolations: 0,
+        policyWarnings: 0,
+        resilienceScore: 0,
         occupancyBudgetMin: 0,
         occupancyUsedMin: 0,
+        crewWaves: 0,
+        h0: 0, h1: 0, h2: 0, h3: 0, h4: 0, h5: 0, h6: 0, h7: 0,
       },
     })
     .returning();
   return getPlanDTO(plan.id);
+}
+
+/** Build the rule-engine environment from the tables (settings toggles decide which rules are live). */
+export async function policyEnv() {
+  const [segRows, setRows] = await Promise.all([db.select().from(segments), db.select().from(settings)]);
+  const sMap = new Map(setRows.map((r) => [r.key, r.value]));
+  return {
+    segments: new Map(segRows.map((r) => [r.id, { id: r.id, code: r.code, corridor: r.corridor, fromCode: r.fromCode, toCode: r.toCode }])),
+    settings: { fogMode: sMap.get("fogMode") === "true", vipAlert: sMap.get("vipAlert") === "true" },
+    windows: WINDOWS,
+    recoveryGapMin: RECOVERY_GAP_MIN,
+    dailyBudgetMin: DAILY_OCCUPANCY_BUDGET_MIN,
+    vipStations: VIP_STATIONS,
+  };
+}
+
+/**
+ * Evaluate the rule book for a stored plan and write each block's verdict back onto its row, so the
+ * Gantt and the approval screen render the same compliance state without recomputing it per client.
+ * Returns the plan-level report for the caller's log / KPI.
+ */
+export async function attachPolicyToPlan(planId: number) {
+  const rows = await db.select().from(blockItems).where(eq(blockItems.planId, planId));
+  const report = evaluatePlanPolicy(
+    rows.map((b) => ({
+      id: b.id,
+      segmentId: b.segmentId,
+      day: b.day,
+      startMin: b.startMin,
+      endMin: b.endMin,
+      departments: b.departments,
+      mode: b.mode,
+    })),
+    await policyEnv()
+  );
+  await Promise.all(
+    rows.map((b) => {
+      const mine = report.perBlock[b.id];
+      return db
+        .update(blockItems)
+        .set({
+          policy: mine
+            ? { score: mine.score, violations: mine.violations, warnings: mine.warnings }
+            : { score: 100, violations: [], warnings: [] },
+        })
+        .where(eq(blockItems.id, b.id));
+    })
+  );
+  return report;
+}
+
+/** `attachPolicyToPlan` plus the plan-level KPI merge, so the stored plan and the DTO agree. */
+async function publishPolicy(planId: number) {
+  const report = await attachPolicyToPlan(planId);
+  const [row] = await db.select().from(plans).where(eq(plans.id, planId));
+  if (row)
+    await db
+      .update(plans)
+      .set({
+        kpis: {
+          ...row.kpis,
+          policyScore: report.score,
+          policyCompliantBlocks: report.compliantBlocks,
+          policyViolations: report.hardViolations,
+          policyWarnings: report.softWarnings,
+        },
+      })
+      .where(eq(plans.id, planId));
+  return report;
 }
 
 export async function getPlanDTO(planId: number): Promise<PlanDTO> {
@@ -1014,13 +1217,36 @@ export async function getPlanDTO(planId: number): Promise<PlanDTO> {
       };
     })
     .sort((a, b) => a.day - b.day || a.startMin - b.startMin);
+
+  // Compliance is re-derived from the rows the Gantt is about to draw, so a plan that has been
+  // dragged by hand, or that a settings toggle has just invalidated, cannot still look clean.
+  const pol = evaluatePlanPolicy(
+    items.map((b) => ({
+      id: b.id,
+      segmentId: b.segmentId,
+      day: b.day,
+      startMin: b.startMin,
+      endMin: b.endMin,
+      departments: b.departments,
+      mode: b.mode,
+    })),
+    await policyEnv()
+  );
+  for (const b of blocks) {
+    const mine = pol.perBlock[b.id];
+    if (mine) {
+      b.policy = { score: mine.score, violations: mine.violations, warnings: mine.warnings };
+      b.overrideReason = (items.find((i) => i.id === b.id)?.overrideReason as string) ?? null;
+    }
+  }
   return {
     id: p.id,
     name: p.name,
     horizon: p.horizon,
     createdAt: p.createdAt.toISOString(),
     resilienceScore: p.resilienceScore,
-    kpis: p.kpis,
+    kpis: { ...p.kpis, policyScore: pol.score, policyCompliantBlocks: pol.compliantBlocks, policyViolations: pol.hardViolations, policyWarnings: pol.softWarnings },
+    policy: { score: pol.score, compliantBlocks: pol.compliantBlocks, hardViolations: pol.hardViolations, softWarnings: pol.softWarnings, rules: pol.rules, summary: pol.summary },
     blocks,
   };
 }
