@@ -160,6 +160,43 @@ try {
   fail("lake", e.message);
 }
 
+// Referenced media must exist. Photo paths live in the seeded lake (FIELD_PHOTOS) and in rows, and
+// a missing file renders as a broken-image box on the Karmi/inspector screens — which reads as
+// "the demo is unfinished" even when every API is fine. This is the cheapest possible guard against
+// asset regressions, and it found four missing TRD/SNT photos on the day it was written.
+console.log("\nReferenced photos (every image the UI will request):");
+try {
+  const [dj, dd] = await Promise.all([fetch(base + "/api/jobs").then((r) => r.json()), fetch(base + "/api/defects").then((r) => r.json())]);
+  const paths = new Set();
+  const add = (v) => {
+    if (typeof v === "string" && v.startsWith("/photos/")) paths.add(v);
+  };
+  for (const j of dj.jobs ?? []) [j.reportPhoto, j.beforePhoto, j.afterPhoto].forEach(add);
+  for (const d of dd.defects ?? []) add(d.photoPath);
+  if (paths.size === 0) fail("photos", "no /photos/* references found — did the seed run?");
+  const broken = [];
+  for (const pth of [...paths].sort()) {
+    const r = await fetch(base + pth);
+    if (!r.ok) {
+      broken.push(`${pth} (HTTP ${r.status})`);
+      continue;
+    }
+    // Magic bytes, not just size: two of these files were 318-byte text blobs containing a
+    // `data:image/svg+xml;base64,…` string saved under a .jpg name — served with HTTP 200, so a
+    // status check passes while the browser renders a broken-image box.
+    const buf = Buffer.from(await r.arrayBuffer());
+    const isJpeg = buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+    const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+    const isWebp = buf.subarray(8, 12).toString("ascii") === "WEBP";
+    if (!isJpeg && !isPng && !isWebp) broken.push(`${pth} (${buf.length}B, not a JPEG/PNG/WebP)`);
+    else if (buf.length < 4096) broken.push(`${pth} (only ${buf.length}B — placeholder?)`);
+  }
+  if (broken.length) fail("photos", `${broken.length} broken: ${broken.join(", ")}`);
+  else ok(`photos resolvable`, `${paths.size} unique images referenced by the UI`);
+} catch (e) {
+  fail("photos", e.message);
+}
+
 console.log(`\n${pass} passed, ${failures.length} failed`);
 if (failures.length) {
   console.log("\nFAILURES:");
