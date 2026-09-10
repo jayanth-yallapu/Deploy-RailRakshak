@@ -7,8 +7,8 @@
 > | --- | --- | --- |
 > | `npx tsc --noEmit` | 14 errors | **0 errors** |
 > | `npm run build` | failed (needs network for fonts) | **passes offline**, type-checks in-build |
-> | `node scripts/verify.mjs` | 8 / 15 | **30 / 30** |
-> | `node scripts/smoke.mjs` | (didn't exist) | **18 / 18** (8 pages · 5 endpoints · 5 lake checks) |
+> | `node scripts/verify.mjs` | 8 / 15 | **57 / 57** |
+> | `node scripts/smoke.mjs` | (didn't exist) | **19 / 19** (8 pages · 5 endpoints · 5 lake checks · photo-bytes gate) |
 > | seeded lake | 10 stations · 7 sections · 0 defects · 0 assets · 0 jobs | **19 · 23 · 97 defects · 84 assets · 12 work orders · 1 opening plan** |
 >
 > Also fixed on the way: `/api/defects` + `/api/jobs` returned unusable payloads (snake_case
@@ -170,6 +170,53 @@ auto-checked. Everything above is server-side truth: types, build, HTML render, 
 state. For the interaction pass I give you a 6-click checklist, and I write the code defensively
 (busy guards, optional chaining on every DTO read) — that's also why the smoke test asserts
 content markers rather than just HTTP 200.
+
+---
+
+## TIER 1 — ✅ 1.1, 1.2 and 1.3 are built (2026-09-10)
+
+**1.1 Benchmark harness — DONE.** `planPool()` was extracted out of `runOptimizer` so the benchmark
+executes the *product's own solver*, and `scorePlan()` is now the single objective used by the AI
+plan, the sequential-silo baseline and every simulated manual plan — one objective function in the
+repo, not one for us and a softer one for the comparison. `src/lib/engine/benchmark.ts` runs
+`planPool` in *manual-process* mode (arrival order instead of risk order, one occupation per
+department instead of bundling, habitual mid-window start instead of exhaustive search, 8–20 %
+duration padding, one gang per department per night, double-bookings resolved by pushing to the next
+night) with seeded RNG, and reports means, win rate and a bootstrap 95 % CI over paired deltas.
+Persisted in the new `benchmarks` table; `POST|GET /api/benchmark`; `BenchmarkPanel` on
+`/simulation` prints its own assumptions. Deviation from the sketch above, in honesty: the manual
+model does *not* get first pick of the golden window (it books the habitual mid-window slot), so it
+is if anything a generous model of the incumbent. Measured (seeded lake, 7-day cycle, 43
+block-requiring defects, 23 sections, 100 meetings): **76.0 vs 115.2 block-min per defect cleared**,
+**43 vs 31 defects cleared** (12 left open by the meeting), **20 vs 21 occupations**, 87 % vs 70 %
+of sections covered, **+1815 train-minutes of avoidable delay, 95 % CI +1732…+1894**, AI at least as
+good on *every* metric in **100 %** of runs.
+
+**1.2 Block-policy compliance engine — DONE.** `src/lib/engine/policy.ts`: nine rules as data, each
+with the clause it enforces — WINDOW, MAX_BLOCK (ENG 210 / TRD 215 / SNT 180), OCCUPANCY, GAP,
+BUDGET, VVIP (driven by the existing alert toggle, so it is demo-able at any hour), FOG (same),
+CORRIDOR concentration, and a weekly rest-night rule. Verdicts are recomputed from the stored rows on
+every read, written to `block_items.policy`, and re-run on every drag; `POST /api/veto
+{mode:"APPROVED"}` answers **409 with the breach list** unless a named `overrideReason` is recorded.
+`GET /api/policy` is the read-only view. UI: red blinking frame + `!` on breaching Gantt bars, amber
+dashed for advisories, `PolicyLedger` panel with the rule book and the override prompt. Building it
+exposed a real generator bug — block length was clamped to the *window* (215) and not the
+*department* cap, so a 215-min ENG-only block failed our own rule — now fixed by having both sides
+read `maxBlockMinutes()`.
+
+**1.3 Explainability — mostly DONE.** Every block carries an audit note (`block_items.explain`,
+written inside `planPool` from the numbers the search actually used): objective terms of the driving
+defect, the slot taken, the best rejected slot with its gap measured on the same objective scale, the
+night's remaining occupancy budget, the bundling saving. `GET /api/explain?blockItemId=` + a
+click-to-open `BlockExplain` card; a hand-moved block is flagged as such and shows "as placed" vs
+"now" rather than having its reasoning rewritten. Still open from the sketch: the counterfactual
+slider, per-item "why was I suspended/deferred" reasons, and the Hindi verdict line.
+
+Also swept while touching these screens: the DRM Trust Index no longer starts at an invented 88 %
+and resilience no longer defaults to 77.8; the ₹/month card is now measured train-minutes avoided ×
+the model's own ₹420/train-minute (was `savedH × ₹66,000 + bundlingPct × 1400`, the second term not
+being a cost of anything); and `verify.mjs` asserts that all three plan producers publish the *same*
+KPI key set, since a dropped key is exactly how "the page showed undefined" happens.
 
 ---
 
