@@ -52,8 +52,11 @@ const PAGES = [
   { path: "/", name: "landing / overview", expect: ["26027", "Command Center"] },
   { path: "/login", name: "role sign-in", expect: ["Select Your Operating Desk"] },
   { path: "/command", name: "command center", expect: [SHELL], shell: true },
-  { path: "/planner", name: "block planner", expect: [SHELL], shell: true },
-  { path: "/simulation", name: "testing lab", expect: [SHELL], shell: true },
+  // These three used to be `shell: true` (i.e. "we could not find a stable marker, so just check the
+  // layout"). Each now has real ones, so a page that renders only its header — or loses a panel to a
+  // crash boundary — fails the smoke gate instead of passing it.
+  { path: "/planner", name: "block planner", expect: ["Strategic Block Optimization Engine", "Block rule book"] },
+  { path: "/simulation", name: "testing lab", expect: ["Evidence", "divisional allocation meeting"] },
   { path: "/field", name: "field work", expect: [SHELL], shell: true },
   { path: "/jobs", name: "karmi job portal", expect: [SHELL], shell: true },
   { path: "/patrol", name: "patroller reporting", expect: ["Patroller Field Handset", "Observed Defect Type"] },

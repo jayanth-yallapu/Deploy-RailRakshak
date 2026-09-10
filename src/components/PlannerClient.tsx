@@ -5,6 +5,7 @@ import { BadgeCheck, BrainCircuit, ChevronRight, Clock3, Cpu, FileCheck2, Layers
 import GanttChart from "@/components/GanttChart";
 import PolicyLedger from "@/components/PolicyLedger";
 import BlockExplain from "@/components/BlockExplain";
+import DefectWhy from "@/components/DefectWhy";
 import { DEPT_COLORS, fmtMin } from "@/lib/engine/network";
 import { getRole } from "@/lib/role";
 import type { DashboardState, DefectDTO, OptimizeResponse, PlanDTO, SafetyOrderDTO } from "@/lib/engine/types";
@@ -101,6 +102,8 @@ export default function PlannerClient({ initial }: { initial: DashboardState }) 
   const [logs, setLogs] = useState<string[]>([]);
   const [mc, setMc] = useState<OptimizeResponse["monteCarlo"] | null>(null);
   const [selectedBlock, setSelectedBlock] = useState<number | null>(null);
+  /** Which backlog item has its "why" drawer open (click a queue row). */
+  const [whyId, setWhyId] = useState<number | null>(null);
   const [defects, setDefects] = useState<DefectDTO[]>([]);
   const [isDrm, setIsDrm] = useState(false);
   const [approveBusy, setApproveBusy] = useState(false);
@@ -461,7 +464,12 @@ export default function PlannerClient({ initial }: { initial: DashboardState }) 
             </thead>
             <tbody className="divide-y divide-edge/60">
               {defects.slice(0, 24).map((d) => (
-                <tr key={d.id} className="hover:bg-white/[0.02]">
+                <tr
+                  key={d.id}
+                  onClick={() => setWhyId((v) => (v === d.id ? null : d.id))}
+                  className={`cursor-pointer transition-colors hover:bg-white/[0.02] ${whyId === d.id ? "bg-amber-500/[0.06]" : ""}`}
+                  title="Click: the arithmetic behind this rank, and what would change it"
+                >
                   <td className="px-4 py-2.5">
                     <span
                       className="rounded-md px-2 py-0.5 font-mono font-bold text-[11px]"
@@ -484,13 +492,15 @@ export default function PlannerClient({ initial }: { initial: DashboardState }) 
                   <td className="px-3 py-2.5 font-mono text-dim">{d.overdueDays}d</td>
                   <td className="px-4 py-2.5 text-right">
                     <span className={`inline-flex items-center gap-1 font-medium capitalize ${d.status === "scheduled" ? "text-emerald-400" : "text-amber-400"}`}>
-                      {d.status} <ChevronRight size={11} />
+                      {d.status}
+                      <ChevronRight size={11} className={`transition-transform ${whyId === d.id ? "rotate-90" : ""}`} />
                     </span>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {whyId != null && <DefectWhy defectId={whyId} />}
         </div>
       </section>
     </div>

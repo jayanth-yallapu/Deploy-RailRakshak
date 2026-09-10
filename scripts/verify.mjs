@@ -221,6 +221,57 @@ ok(
   `${moneyState.kpis.baselineDelayTrainMin} → ${moneyState.kpis.delayTrainMin} train-min per cycle (₹420/train-min)`
 );
 
+// ---- per-item reasoning: /api/why (rank arithmetic + counterfactuals that re-run the planner) ----
+await resetLake();
+const dl = (await fetch(`${base}/api/defects`).then(j)).defects;
+const noBlockItem = dl.find((d) => !d.requiresBlock);
+const physItem = dl.find((d) => d.requiresBlock && d.inspectionMode === "physical");
+await post("/api/mode", { key: "fogMode", value: true });
+const whyNB = await fetch(`${base}/api/why?defectId=${noBlockItem.id}`).then(j);
+ok("why: an item that needs no line occupation is explained as such", whyNB.gate.reason === "no_block" && whyNB.placedIn === null, `${whyNB.defect.title.slice(0, 30)} → ${whyNB.gate.reason}`);
+const why = await fetch(`${base}/api/why?defectId=${dl.find((d) => d.requiresBlock && d.status !== "closed").id}`).then(j);
+const whyClosed = await fetch(`${base}/api/why?defectId=${dl.find((d) => d.status === "closed")?.id ?? 1}`).then(j);
+ok(
+  "why: an item outside the live pool is explained, not 404ed",
+  whyClosed.defect && whyClosed.gate.reason === "outside_pool" && whyClosed.rank === null,
+  `status ${whyClosed.defect?.status} → ${whyClosed.gate?.reason}`
+);
+const whySum = Math.round(why.score.terms.reduce((a, t) => a + t.value, 0));
+ok(
+  "why: the displayed terms add up to the displayed score (no hidden multiplier)",
+  Math.abs(whySum - why.score.score) <= 1,
+  `Σ${whySum} vs ${why.score.score} across ${why.score.terms.length} terms`
+);
+ok(
+  "why: delay grows monotonically with neglect, and rank never worsens",
+  (() => {
+    const later = why.counterfactuals.find((c) => c.label.includes("another 30 days"));
+    if (!later || !why.rank) return false;
+    return later.delta > 0 && (later.rank === null || later.rank <= why.rank.position);
+  })(),
+  (() => {
+    const later = why.counterfactuals.find((c) => c.label.includes("another 30 days"));
+    return later && why.rank ? `+${later.delta} score, rank ${why.rank.position} → ${later.rank} · ${later.planEffect}` : "n/a";
+  })()
+);
+ok(
+  "why: counterfactuals re-run the planner instead of interpolating",
+  why.counterfactuals.filter((c) => typeof c.planEffect === "string" && c.planEffect.length > 12).length >= 2,
+  `${why.counterfactuals.filter((c) => c.planEffect).length} of ${why.counterfactuals.length} variants carry a placement outcome`
+);
+if (physItem) {
+  const whyPhys = await fetch(`${base}/api/why?defectId=${physItem.id}`).then(j);
+  const suspended = whyPhys.gate.reason === "fog_suspended";
+  ok(
+    "why: the fog gate in the explanation is the same gate the planner applies (risk < 0.55)",
+    whyPhys.defect.requiresBlock && !whyPhys.defect.title.startsWith("__") && suspended === (whyPhys.score.risk < 0.55),
+    `${suspended ? "suspended" : "kept"} at risk ${(whyPhys.score.risk * 100).toFixed(0)}% — ${whyPhys.gate.detail.slice(0, 44)}…`
+  );
+}
+const why404 = await fetch(`${base}/api/why?defectId=9999999`);
+ok("why: an item that does not exist answers 404, never a stack trace", why404.status === 404);
+await post("/api/mode", { key: "fogMode", value: false });
+
 // ---- evidence benchmark (AI vs simulated divisional meeting) ----
 await resetLake();
 const before = await fetch(`${base}/api/state`).then(j);

@@ -50,7 +50,15 @@ curl -s "localhost:3000/api/explain?blockItemId=<id-from-/api/state>"
   scale, that night's remaining occupancy budget, and the bundling saving. A block a human moved
   says so explicitly instead of having its reasoning rewritten.
 
-All three are read-only with respect to a published plan (verify asserts this), and the benchmark
+- **`/api/why`** answers the queue-level question. It prints the objective terms that sum to the
+  displayed priority score, the item's rank in the pool, and the gate that moved it out of the pool
+  (no-block-needed / fog standing order / VVIP exclusion / outside this cycle) — then four
+  counterfactuals ("reported on time", "one severity band lower", "asset at 100", "left 30 days
+  longer"), each of which **re-runs the placement search** on the modified pool, so the answer is
+  "rank 32 → 15, still planned, but on D+2 instead of D+3", not an interpolation. Click any row in
+  the planner's defect queue.
+
+All four are read-only with respect to a published plan (verify asserts this), and the benchmark
 never writes to `plans`/`block_items`, so running them mid-demo cannot disturb the schedule on screen.
 
 ### Verifying a deployment
@@ -61,7 +69,7 @@ Four gates, all runnable against any URL. These are the checks we re-run after e
 ```bash
 npx tsc --noEmit                        # 0 errors (a schema change that strands a consumer fails here)
 npm run build                           # must succeed with NO network access (fonts are self-hosted)
-node scripts/verify.mjs  http://localhost:3000   # 57 business-invariant checks against live APIs
+node scripts/verify.mjs  http://localhost:3000   # 64 business-invariant checks against live APIs
 node scripts/smoke.mjs   http://localhost:3000   # 19 checks: every page renders its own component
                                                  # tree, every endpoint returns shaped data, and the
                                                  # data lake is actually populated
@@ -174,6 +182,7 @@ the real Yamuna course, and 24 real trains (12951/52 Mumbai Rajdhani, 12301/02 H
 · `POST /api/mode` (fog/VIP/DTP) · `POST /api/veto` (approve/veto; approval is policy-gated)
 · `GET /api/ingest?system=…` · `GET /api/policy` (live rule-book verdict for the plan)
 · `GET /api/explain?blockItemId=N` (why that block, that night, that length)
+· `GET /api/why?defectId=N` (one backlog item: rank arithmetic + counterfactuals)
 · `POST|GET /api/benchmark` (AI plan vs N simulated divisional allocation meetings)
 
 ## Front-end notes

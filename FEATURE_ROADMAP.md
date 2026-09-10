@@ -204,13 +204,18 @@ exposed a real generator bug — block length was clamped to the *window* (215) 
 *department* cap, so a 215-min ENG-only block failed our own rule — now fixed by having both sides
 read `maxBlockMinutes()`.
 
-**1.3 Explainability — mostly DONE.** Every block carries an audit note (`block_items.explain`,
+**1.3 Explainability — DONE (except the Hindi line).** Every block carries an audit note (`block_items.explain`,
 written inside `planPool` from the numbers the search actually used): objective terms of the driving
 defect, the slot taken, the best rejected slot with its gap measured on the same objective scale, the
 night's remaining occupancy budget, the bundling saving. `GET /api/explain?blockItemId=` + a
 click-to-open `BlockExplain` card; a hand-moved block is flagged as such and shows "as placed" vs
-"now" rather than having its reasoning rewritten. Still open from the sketch: the counterfactual
-slider, per-item "why was I suspended/deferred" reasons, and the Hindi verdict line.
+"now" rather than having its reasoning rewritten. Also shipped: `classify()` now returns a per-item gate reason and `GET /api/why?defectId=` answers
+the queue side — the terms that sum to the score, the rank in the pool, why the item was moved out of
+it (no-block / fog / VVIP / outside this cycle), and four counterfactuals, each of which **re-runs
+`planPool` on the modified pool** rather than interpolating ("+30 days neglected → score +19.7, rank
+32 → 15, and it moves from D+3 to D+2"). Clicking a row in the planner's defect queue opens it. Closed
+the 404 dead-end too: an item outside the live pool is explained as such.
+Still open from the sketch: the Hindi verdict line on this drawer (one string, needs `translations.ts`).
 
 Also swept while touching these screens: the DRM Trust Index no longer starts at an invented 88 %
 and resilience no longer defaults to 77.8; the ₹/month card is now measured train-minutes avoided ×

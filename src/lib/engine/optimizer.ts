@@ -258,6 +258,8 @@ export interface Candidate {
 export function classify(lake: Awaited<ReturnType<typeof loadLake>>) {
   const schedulable: Candidate[] = [];
   const noBlock: Candidate[] = [];
+  /** Why each backlog item is where it is — the input to "why was I not planned?" (see /api/why). */
+  const reasons = new Map<number, { reason: string; detail: string }>();
   let suspendedFog = 0;
   let withheldVip = 0;
 
@@ -273,21 +275,39 @@ export function classify(lake: Awaited<ReturnType<typeof loadLake>>) {
 
     if (!d.requiresBlock) {
       noBlock.push(cand); // telemetry / CCTV / drone — cleared without occupying the line
+      reasons.set(d.id, {
+        reason: "no_block",
+        detail: "Remote/CCTV/drone inspection — cleared without occupying the line, so it never competes for a night.",
+      });
       continue;
     }
     if (lake.fogMode && d.inspectionMode === "physical" && scored.risk < 0.55) {
       suspendedFog++;
+      reasons.set(d.id, {
+        reason: "fog_suspended",
+        detail: `Fog standing order: a physical gang is not deployed in dense fog, and its 72 h risk ${(scored.risk * 100).toFixed(0)}% is below the ${"0.55"} emergency gate that would override that.`,
+      });
       continue;
     }
     if (lake.vipAlert && (VIP_STATIONS.has(seg.fromCode) || VIP_STATIONS.has(seg.toCode)) && scored.severity < 8) {
       withheldVip++;
+      reasons.set(d.id, {
+        reason: "vip_withheld",
+        detail: `Exclusive movement notified on ${seg.fromCode}/${seg.toCode}: only severity 8+ may be booked on this corridor while it is active (this item is severity ${scored.severity}).`,
+      });
       continue;
     }
     schedulable.push(cand);
   }
 
   schedulable.sort((a, b) => b.scored.score - a.scored.score);
-  return { schedulable, noBlock, suspendedFog, withheldVip };
+  schedulable.forEach((c, i) =>
+    reasons.set(c.d.id, {
+      reason: "in_pool",
+      detail: `Rank ${i + 1} of ${schedulable.length} in this cycle's pool by priority score (${c.scored.score}).`,
+    })
+  );
+  return { schedulable, noBlock, suspendedFog, withheldVip, reasons };
 }
 
 /* ------------------------------------------------------------------ */
