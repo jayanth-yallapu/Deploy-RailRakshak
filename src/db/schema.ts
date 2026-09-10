@@ -128,6 +128,24 @@ export const blockItems = pgTable("block_items", {
   window: text("window").notNull().default("GOLDEN"), // GOLDEN | SHOULDER | OFFPEAK
   delayCostMin: real("delay_cost_min").notNull().default(0),
   status: text("status").notNull().default("proposed"),
+  /** Rule evaluation snapshot for this block (see src/lib/engine/policy.ts). Kept on the row so the
+   *  Gantt and the approval screen show the same verdict without re-running the rule engine. */
+  policy: jsonb("policy").$type<{ score: number; violations: string[]; warnings: string[] } | null>(),
+  /** Audit trail for "why this block, here, at this time" — objective terms + the runner-up slot. */
+  explain: jsonb("explain").$type<Record<string, unknown> | null>(),
+  /** Set only when a human approved a block that carried a hard violation, with the reason. */
+  overrideReason: text("override_reason"),
+});
+
+/** AI-vs-manual planning benchmark runs: how much better this cycle's plan was, measured. */
+export const benchmarks = pgTable("benchmarks", {
+  id: serial("id").primaryKey(),
+  ranAt: timestamp("ran_at").defaultNow().notNull(),
+  horizon: text("horizon").notNull().default("WEEKLY"),
+  runs: integer("runs").notNull(),
+  seed: integer("seed").notNull().default(1),
+  /** Full report (per-run deltas + bootstrap intervals) for the panel and the export. */
+  report: jsonb("report").$type<Record<string, unknown>>().notNull(),
 });
 
 /** Event / alert feed for the command center. */

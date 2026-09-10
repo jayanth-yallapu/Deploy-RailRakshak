@@ -24,6 +24,7 @@
  * which is what lets the report quote fixed numbers.
  */
 import { db } from "@/db";
+import { ensureTier1Schema } from "@/db/ensure";
 import { assets, defects, events, jobs, segments, settings, stations } from "@/db/schema";
 import { sql } from "drizzle-orm";
 import { FIELD_PHOTOS, SEGMENTS, STATIONS, mulberry32, project, sectionMeta } from "./network";
@@ -458,6 +459,7 @@ let checkedThisProcess = false;
 
 /** Called by every engine read; a no-op once the lake is known good for this process. */
 export async function ensureSeeded(force = false): Promise<void> {
+  await ensureTier1Schema(); // additive, idempotent — repairs a stale schema before anything reads it
   if (checkedThisProcess && !force) return;
   const shape = await lakeShape();
   if (!force && isLakeHealthy(shape)) {
@@ -476,6 +478,7 @@ export async function seed(): Promise<LakeShape> {
   // class of bug that only appears on the demo machine. A session-scoped advisory lock (`pg_advisory_lock`) makes
   // seeding mutually exclusive, and we re-check health right after acquiring it so the loser of the
   // race simply returns instead of rebuilding a lake that is now fine.
+  await ensureTier1Schema();
   await db.execute(sql`select pg_advisory_lock(hashtext('railrakshak_seed'))`);
   try {
     if (isLakeHealthy(await lakeShape())) {

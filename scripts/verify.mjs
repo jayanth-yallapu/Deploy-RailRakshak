@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * RAIL RAKSHAK — deployment verifier.
- * Runs 15 invariant checks against the live API. Usage:
+ * Runs the invariant checks against the live API. Usage:
  *   node scripts/verify.mjs [baseUrl]   (default http://localhost:3000)
  */
 const base = process.argv[2] ?? "http://localhost:3000";
@@ -95,6 +95,51 @@ ok("whatif: peak bridge closure rejected", wi.recommend === false, `net ₹${wi.
 const wi2 = await post("/api/whatif", { segmentId: bridge.id, durationH: 2, startMin: 60, superBlock: true });
 ok("whatif: golden-window super-block recommended", wi2.recommend === true, `net ₹${wi2.netBenefit}`);
 ok("whatif: failure exposure is a probability (≤100%)", (wi.futureFailureCostAvoided > 0), `exposure avoided ₹${wi.futureFailureCostAvoided.toLocaleString("en-IN")}`);
+
+// ---- evidence benchmark (AI vs simulated divisional meeting) ----
+await resetLake();
+const before = await fetch(`${base}/api/state`).then(j);
+const bm = await post("/api/benchmark", { runs: 60, seed: 1 });
+const rep = bm.report;
+ok("benchmark: simulates the manual process and stores the run", !!rep && rep.runs === 60, `${rep?.candidates} defects · ${rep?.sections} sections · ${rep?.days}-day cycle`);
+ok(
+  "benchmark: both planners face the identical backlog (nothing hidden in 'deferred')",
+  rep.ai.clearedItems + rep.ai.deferredItems === rep.candidates && rep.manual.clearedItems + rep.manual.deferredItems === rep.candidates,
+  `AI ${rep.ai.clearedItems}+${rep.ai.deferredItems} · manual ${rep.manual.clearedItems}+${rep.manual.deferredItems} = ${rep.candidates}`
+);
+ok(
+  "benchmark: AI clears at least as much of the backlog as the meeting",
+  rep.ai.clearedItems >= rep.manual.clearedItems,
+  `${rep.ai.clearedItems} vs ${rep.manual.clearedItems} defects`
+);
+ok(
+  "benchmark: win rate is computed from the runs, not asserted",
+  rep.winRatePct >= 80 && rep.efficiencyWinRatePct >= 90 && rep.perRun.length === 60,
+  `${rep.winRatePct}% strict · ${rep.efficiencyWinRatePct}% on min/defect`
+);
+ok(
+  "benchmark: bootstrap 95% CI on the delay delta excludes zero",
+  rep.deltas.delayTrainMin.ci95[0] > 0,
+  `+${rep.deltas.delayTrainMin.mean} train-min (CI ${rep.deltas.delayTrainMin.ci95.join("…")})`
+);
+ok("benchmark: generated plan carries no double-bookings, the meeting's are arbitrations", rep.ai.conflicts === 0 && rep.manual.arbitrations >= 0, `AI ${rep.ai.conflicts} · manual pushes ${rep.manual.arbitrations}`);
+const bm2a = await post("/api/benchmark", { runs: 25, seed: 3 });
+const bm2b = await post("/api/benchmark", { runs: 25, seed: 3 });
+ok(
+  "benchmark: deterministic for a given seed (quotable in a written report)",
+  bm2a.report.manual.downtimeMin === bm2b.report.manual.downtimeMin &&
+    bm2a.report.ai.downtimeMin === bm2b.report.ai.downtimeMin &&
+    bm2a.report.winRatePct === bm2b.report.winRatePct,
+  `${bm2a.report.manual.downtimeMin} manual block-min both times`
+);
+const bmGet = await fetch(`${base}/api/benchmark`).then(j);
+ok("benchmark: latest run is retrievable for the deck", !!bmGet.report && bmGet.report.runs === 25, `stored run seed ${bmGet.report?.seed}`);
+const after = await fetch(`${base}/api/state`).then(j);
+ok(
+  "benchmark: read-only against the live plan (it must not touch a published plan)",
+  after.latestPlan.blocks.length === before.latestPlan.blocks.length && after.counts.openDefects === before.counts.openDefects,
+  `${after.latestPlan.blocks.length} blocks, ${after.counts.openDefects} unscheduled — unchanged`
+);
 
 // ---- contracts ----
 const dlist = await fetch(`${base}/api/defects`).then(j);

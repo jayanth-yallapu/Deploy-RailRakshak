@@ -178,7 +178,7 @@ export function packWaves(ds: { id: number; department: string; durationMin: num
 type DefectRow = typeof defects.$inferSelect;
 type AssetRow = typeof assets.$inferSelect;
 
-async function loadLake() {
+export async function loadLake() {
   const [settingRows, segRows, assetRows, defectRows] = await Promise.all([
     db.select().from(settings),
     db.select().from(segments),
@@ -228,14 +228,16 @@ const VIP_STATIONS = new Set(["DLI", "NDLS", "NZM"]);
 
 type SegRow = typeof segments.$inferSelect;
 
-interface Candidate {
+type SegmentLite = { id: number; code: string; dailyTrains: number };
+
+export interface Candidate {
   d: DefectRow;
   seg: SegRow;
   scored: ScoredItem;
 }
 
 /** Score the backlog and split it into schedulable / no-block / suspended / withheld buckets. */
-function classify(lake: Awaited<ReturnType<typeof loadLake>>) {
+export function classify(lake: Awaited<ReturnType<typeof loadLake>>) {
   const schedulable: Candidate[] = [];
   const noBlock: Candidate[] = [];
   let suspendedFog = 0;
@@ -286,7 +288,10 @@ interface DraftBlock {
   window: string;
   delayCostMin: number;
   estAffected: number;
-  alternatives: { startMin: number; cost: number }[];
+  /** The cheapest placement that was rejected: what the explain panel quotes as the runner-up. */
+  alternatives: { startMin: number; cost: number; label?: string }[];
+  /** Benchmark bookkeeping: which working unit produced this block. */
+  unitKey?: string;
 }
 
 function overlaps(a0: number, a1: number, b0: number, b1: number) {
@@ -360,13 +365,140 @@ function placeBlock(
     window: best.window,
     delayCostMin: Math.round(best.delay * 10) / 10,
     estAffected: Math.max(1, best.affected),
-    alternatives: [{ startMin: -1, cost: Math.round(second.cost * 10) / 10 }],
+    alternatives: [{ startMin: -1, cost: Math.round(second.cost * 10) / 10, label: second.label }],
   };
 }
 
 /* ------------------------------------------------------------------ */
 /*  5. Baseline — how the same backlog looks if planned the old way     */
 /* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/*  Process model for the benchmark                                    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * How a divisional allocation meeting actually places a block when nobody searches: walk the days
+ * from the front of the cycle, take the first night where the section and the department's own gang
+ * are free, and book the habitual mid-window slot. If the section is already occupied that night the
+ * request is not rejected, it is *pushed* — that push is an arbitration, and it is counted.
+ */
+function placeConventional(
+  seg: { id: number; code?: string; dailyTrains: number },
+  dur: number,
+  days: number,
+  busy: Map<string, [number, number][]>,
+  dayBudgetLeft: number[],
+  deptDayUsed: Map<string, Set<number>>,
+  dept: string | null,
+  rng: () => number,
+  onArbitration: () => void
+): DraftBlock | null {
+  // Habit: request the middle of the notified window, with whatever the planner's notebook says.
+  const habitStart = 120 + Math.round(rng() * 4) * 30; // 02:00 – 04:00
+  for (let day = 0; day < days; day++) {
+    if (dayBudgetLeft[day] < dur) continue;
+    if (dept && deptDayUsed.get(dept)?.has(day)) continue; // that gang is already out there
+    let start = habitStart;
+    const taken = busy.get(`${seg.id}:${day}`) ?? [];
+    const clash = taken.find(([s, e]) => overlaps(start - RECOVERY_GAP_MIN, start + dur + RECOVERY_GAP_MIN, s, e));
+    if (clash) {
+      // The room's decision is "you take the next night", which is what a push costs.
+      onArbitration();
+      continue;
+    }
+    if (start + dur > 1440 - 30) start = Math.max(0, 1440 - 30 - dur);
+    const { cost, affected } = delayCostEstimate(seg.dailyTrains, start, dur);
+    busy.set(`${seg.id}:${day}`, [...taken, [start, start + dur]]);
+    if (dept) deptDayUsed.set(dept, new Set([...(deptDayUsed.get(dept) ?? []), day]));
+    dayBudgetLeft[day] -= dur;
+    return {
+      segmentId: seg.id,
+      day,
+      startMin: start,
+      endMin: start + dur,
+      departments: [],
+      defectIds: [],
+      isSuperBlock: false,
+      mode: "physical",
+      window: "Notified window (conventional booking)",
+      delayCostMin: Math.round(cost * 10) / 10,
+      estAffected: Math.max(1, affected),
+      alternatives: [],
+    };
+  }
+  return null;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Shared plan scorer — one objective, three consumers               */
+/* ------------------------------------------------------------------ */
+
+/** The minimal shape of "a block", so any plan (ours, a baseline, a simulated human's) is scored
+ *  by exactly the same arithmetic. This is what makes the comparison defensible: there is one
+ *  objective function in the repo, not one for the AI and a softer one for the baseline. */
+export interface ScoreableBlock {
+  segId: number;
+  day: number;
+  startMin: number;
+  endMin: number;
+  dailyTrains: number;
+  depts: string[];
+}
+
+export interface PlanScore {
+  downtimeMin: number;
+  delayMin: number;
+  affected: number;
+  avgDelayMin: number;
+  blocks: number;
+  superBlocks: number;
+  bundlingPct: number;
+  /** pairs of same-section blocks that overlap — i.e. double-bookings someone must arbitrate. */
+  conflicts: number;
+  /** share of the grid that received its maintenance attention this cycle. */
+  coveragePct: number;
+  sectionsCovered: number;
+}
+
+export function scorePlan(blocks: ScoreableBlock[], totalSections: number): PlanScore {
+  let downtimeMin = 0;
+  let delayMin = 0;
+  let affected = 0;
+  let superBlocks = 0;
+  let bundledMin = 0;
+  const perSection = new Map<string, [number, number][]>();
+  for (const b of blocks) {
+    const dur = b.endMin - b.startMin;
+    downtimeMin += dur;
+    const c = delayCostEstimate(b.dailyTrains, b.startMin, dur);
+    delayMin += c.cost;
+    affected += c.affected;
+    if (b.depts.length >= 2) {
+      superBlocks += 1;
+      bundledMin += dur;
+    }
+    const key = `${b.segId}:${b.day}`;
+    perSection.set(key, [...(perSection.get(key) ?? []), [b.startMin, b.endMin]]);
+  }
+  let conflicts = 0;
+  for (const list of perSection.values()) {
+    list.sort((a, b) => a[0] - b[0]);
+    for (let i = 1; i < list.length; i++) if (list[i][0] < list[i - 1][1]) conflicts += 1;
+  }
+  return {
+    downtimeMin,
+    delayMin,
+    affected,
+    avgDelayMin: Math.round((delayMin / Math.max(affected, 1)) * 10) / 10,
+    blocks: blocks.length,
+    superBlocks,
+    bundlingPct: Math.round((bundledMin / Math.max(downtimeMin, 1)) * 100),
+    conflicts,
+    coveragePct: Math.round(((perSection.size ? new Set(blocks.map((b) => b.segId)).size : 0) / Math.max(totalSections, 1)) * 100),
+    sectionsCovered: new Set(blocks.map((b) => b.segId)).size,
+  };
+}
 
 /**
  * Deterministic stand-in for the current manual process, used only as a comparison point:
@@ -375,54 +507,158 @@ function placeBlock(
  *  · no traffic-curve evaluation: requests land at a conventional mid-window start (02:00)
  * No randomness — the same backlog always yields the same baseline, so the delta is reproducible.
  */
-export function sequentialSiloBaseline(
+export function sequentialSiloBaselineBlocks(
   items: {
     seg: { id: number; code: string; dailyTrains: number };
     d: { department: string; durationMin: number; segmentId: number | null };
   }[]
-) {
-  const bySegDept = new Map<string, { segId: number; dailyTrains: number; dept: string; mins: number; n: number }>();
+): ScoreableBlock[] {
+  const bySegDept = new Map<string, { segId: number; dailyTrains: number; dept: string; mins: number }>();
   for (const it of items) {
     const key = `${it.d.segmentId ?? it.seg.id}:${it.d.department}`;
-    const cur =
-      bySegDept.get(key) ?? { segId: it.seg.id, dailyTrains: it.seg.dailyTrains, dept: it.d.department, mins: 0, n: 0 };
+    const cur = bySegDept.get(key) ?? { segId: it.seg.id, dailyTrains: it.seg.dailyTrains, dept: it.d.department, mins: 0 };
     cur.mins += it.d.durationMin;
-    cur.n += 1;
     bySegDept.set(key, cur);
   }
-  let downtimeMin = 0;
-  let delay = 0;
-  let affected = 0;
-  let blocks = 0;
-  let conflicts = 0;
-  const perSeg = new Map<number, number>();
-  const MID_WINDOW = 150; // 02:00 — the conventional "middle of the notified window" booking
-  for (const g of bySegDept.values()) {
-    const dur = g.mins + SETUP_MIN;
-    downtimeMin += dur;
-    const { cost, affected: aff } = delayCostEstimate(g.dailyTrains, MID_WINDOW, dur);
-    delay += cost;
-    affected += aff;
-    blocks += 1;
-    perSeg.set(g.segId, (perSeg.get(g.segId) ?? 0) + 1);
-  }
-  // same section, same window, several departments ⇒ simultaneous-occupancy requests that must be
-  // serialised or bundled; the count of pairs is what our planner eliminates.
-  for (const k of perSeg.values()) conflicts += (k * (k - 1)) / 2;
+  const MID_WINDOW = 150; // 02:00 — the conventional "middle of the notified window" booking habit
+  return [...bySegDept.values()].map((g) => ({
+    segId: g.segId,
+    day: 0,
+    startMin: MID_WINDOW,
+    endMin: MID_WINDOW + g.mins + SETUP_MIN,
+    dailyTrains: g.dailyTrains,
+    depts: [g.dept],
+  }));
+}
 
+/** Back-compat wrapper: the deterministic baseline plan, scored with the shared objective. */
+export function sequentialSiloBaseline(items: Parameters<typeof sequentialSiloBaselineBlocks>[0], totalSections = SEG_COUNT) {
+  const blocks = sequentialSiloBaselineBlocks(items);
+  const sc = scorePlan(blocks, totalSections);
   return {
-    downtimeMin,
-    blocks,
-    delayMin: delay,
-    affected,
-    avgDelayMin: Math.round((delay / Math.max(affected, 1)) * 10) / 10,
-    conflicts,
+    downtimeMin: sc.downtimeMin,
+    blocks: sc.blocks,
+    delayMin: sc.delayMin,
+    affected: sc.affected,
+    avgDelayMin: sc.avgDelayMin,
+    conflicts: sc.conflicts,
+    coveragePct: sc.coveragePct,
+    superBlocks: sc.superBlocks,
   };
 }
+
+const SEG_COUNT = 23;
 
 /* ------------------------------------------------------------------ */
 /*  Weekly / monthly planner                                           */
 /* ------------------------------------------------------------------ */
+/**
+ * The planning core, free of database access.
+ *
+ * `runOptimizer` and the benchmark harness both call this, so "the AI plan" in the comparison is
+ * literally the same solver the product runs — not a re-implementation that could be tuned to win.
+ * Groups by section, packs each section's tasks into department waves (block length = the longest
+ * chain + lock-on), then places each block by exhaustive search under the occupancy budget.
+ */
+export interface PlanPoolOptions {
+  fogMode?: boolean;
+  /** "score" = highest-risk section gets the scarce night (product). "arrival" = the order the
+   *  departments happened to table their lists, which is how a divisional meeting actually runs. */
+  order?: "score" | "arrival";
+  /** true = one occupancy per section with parallel department waves. false = every department
+   *  books its own block on the same section (the silo habit the brief describes). */
+  bundle?: boolean;
+  /** "search" = exhaustive lowest-impact placement. "conventional" = the first night where the
+   *  department's own gang is free, at the habitually requested mid-window start. */
+  placement?: "search" | "conventional";
+  /** minutes added to a quoted duration as allowance for lock-on/lock-off and slack. */
+  paddingPct?: number;
+  rng?: () => number;
+}
+
+export function planPool(
+  schedulable: Candidate[],
+  days: number,
+  opts: PlanPoolOptions = {}
+): {
+  drafts: DraftBlock[];
+  dayBudgetLeft: number[];
+  deferredItems: number;
+  deferredSections: string[];
+  /** double-bookings the room had to arbitrate (manual process only) */
+  arbitrations: number;
+} {
+  const bundle = opts.bundle !== false;
+  const conventional = opts.placement === "conventional";
+  const pad = 1 + (opts.paddingPct ?? 0) / 100;
+  const rng = opts.rng ?? (() => 0.5);
+
+  const bySegment = new Map<number, Candidate[]>();
+  for (const c of schedulable) {
+    const list = bySegment.get(c.seg.id) ?? [];
+    list.push(c);
+    bySegment.set(c.seg.id, list);
+  }
+
+  const busy = new Map<string, [number, number][]>();
+  const dayBudgetLeft = new Array(days).fill(DAILY_OCCUPANCY_BUDGET_MIN);
+  const drafts: DraftBlock[] = [];
+  const deferredSections = new Set<string>();
+  let deferredItems = 0;
+  /** How many double-bookings the room had to arbitrate. Not a penalty term — a *count* of manual
+   *  intervention, reported separately so the comparison never hides behind the objective. */
+  let arbitrations = 0;
+
+  // Working units: one per section when departments are bundled, one per department when they are not.
+  type Unit = { seg: SegmentLite; list: Candidate[]; dept: string | null };
+  const units: Unit[] = [];
+  for (const [, list] of bySegment) {
+    const seg = list[0].seg;
+    if (bundle) {
+      units.push({ seg, list, dept: null });
+    } else {
+      for (const dept of [...new Set(list.map((c) => c.d.department))].sort())
+        units.push({ seg, list: list.filter((c) => c.d.department === dept), dept });
+    }
+  }
+
+  const unitKey = (u: Unit) => (u.dept ? `${u.seg.id}:${u.dept}` : `${u.seg.id}`);
+  const ordered =
+    opts.order === "arrival"
+      ? units // the order the lists arrived — no risk weighting applied by the room
+      : [...units].sort(
+          (a, b) =>
+            Math.max(...b.list.map((c) => c.scored.score)) - Math.max(...a.list.map((c) => c.scored.score))
+        );
+
+  // A department has one working gang per night: it cannot be on two sections at once. This is a
+  // real staffing fact, not a modelled weakness, and it is what makes silo booking so expensive.
+  const deptDayUsed = new Map<string, Set<number>>();
+
+  for (const u of ordered) {
+    const tasks = u.list.map((c) => ({ id: c.d.id, department: c.d.department, durationMin: c.d.durationMin }));
+    const { makespan, byDept } = packWaves(tasks);
+    const dur = Math.max(45, Math.min(GOLDEN_CAP, Math.round((makespan + SETUP_MIN) * pad)));
+    const maxSev = Math.max(...u.list.map((c) => c.scored.severity));
+    const b = conventional
+      ? placeConventional(u.seg, dur, days, busy, dayBudgetLeft, deptDayUsed, u.dept, rng, () => (arbitrations += 1))
+      : placeBlock(u.seg, dur, days, maxSev, busy, dayBudgetLeft);
+    if (!b) {
+      deferredSections.add(u.seg.code);
+      deferredItems += u.list.length;
+      continue;
+    }
+    b.departments = Object.keys(byDept).sort();
+    b.defectIds = u.list.map((c) => c.d.id);
+    b.isSuperBlock = b.departments.length >= 2;
+    b.mode = opts.fogMode ? "virtual" : "physical";
+    b.unitKey = unitKey(u);
+    drafts.push(b);
+  }
+
+  return { drafts, dayBudgetLeft, deferredItems, deferredSections: [...deferredSections], arbitrations };
+}
+
 
 export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<OptimizeResponse> {
   const t0 = Date.now();
@@ -447,41 +683,18 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
   }
 
   const days = horizon === "WEEKLY" ? 7 : 28;
-  const busy = new Map<string, [number, number][]>();
-  const dayBudgetLeft = new Array(days).fill(DAILY_OCCUPANCY_BUDGET_MIN);
-  const drafts: DraftBlock[] = [];
-  const deferredSections = new Set<string>();
-  let deferredItems = 0;
+  const core = planPool(schedulable, days);
+  const { drafts, dayBudgetLeft, deferredItems, deferredSections } = core;
 
-  // Highest-priority section first (byScore above) — the budget then defers the tail automatically.
-  const orderedGroups = [...bySegment.entries()].sort(
-    (a, b) => Math.max(...b[1].map((c) => c.scored.score)) - Math.max(...a[1].map((c) => c.scored.score))
+  const aiScore = scorePlan(
+    drafts.map((b) => ({ segId: b.segmentId, day: b.day, startMin: b.startMin, endMin: b.endMin, dailyTrains: lake.segById.get(b.segmentId)?.dailyTrains ?? 60, depts: b.departments })),
+    lake.segById.size
   );
-
-  for (const [, list] of orderedGroups) {
-    const seg = list[0].seg;
-    const tasks = list.map((c) => ({ id: c.d.id, department: c.d.department, durationMin: c.d.durationMin }));
-    const { makespan, byDept } = packWaves(tasks);
-    const dur = Math.max(45, Math.min(GOLDEN_CAP, makespan + SETUP_MIN));
-    const maxSev = Math.max(...list.map((c) => c.scored.severity));
-    const b = placeBlock(seg, dur, days, maxSev, busy, dayBudgetLeft);
-    if (!b) {
-      deferredSections.add(seg.code);
-      deferredItems += list.length;
-      continue;
-    }
-    b.departments = Object.keys(byDept).sort();
-    b.defectIds = list.map((c) => c.d.id);
-    b.isSuperBlock = b.departments.length >= 2;
-    b.mode = lake.fogMode ? "virtual" : "physical";
-    drafts.push(b);
-  }
-
-  const baseline = sequentialSiloBaseline(schedulable);
-  const optimMin = drafts.reduce((s, b) => s + (b.endMin - b.startMin), 0);
-  const totalDelay = drafts.reduce((s, b) => s + b.delayCostMin, 0);
-  const totalAffected = drafts.reduce((s, b) => s + b.estAffected, 0);
-  const avgDelay = Math.round((totalDelay / Math.max(totalAffected, 1)) * 10) / 10;
+  const baseline = sequentialSiloBaseline(schedulable, lake.segById.size);
+  const optimMin = aiScore.downtimeMin;
+  const totalDelay = aiScore.delayMin;
+  const totalAffected = aiScore.affected;
+  const avgDelay = aiScore.avgDelayMin;
 
   // --- stress test ---
   const RUNS = 500;
@@ -511,13 +724,16 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
     downtimeBaselineH: Math.round((baseline.downtimeMin / 60) * 10) / 10,
     downtimeOptimizedH: Math.round((optimMin / 60) * 10) / 10,
     reductionPct: Math.round((1 - optimMin / Math.max(baseline.downtimeMin, 1)) * 100),
-    bundlingPct: Math.round((drafts.filter((b) => b.isSuperBlock).length / Math.max(drafts.length, 1)) * 100),
+    bundlingPct: aiScore.bundlingPct,
     blocks: drafts.length,
     baselineBlocks: baseline.blocks,
-    superBlocks: drafts.filter((b) => b.isSuperBlock).length,
+    superBlocks: aiScore.superBlocks,
+    coveragePct: aiScore.coveragePct,
+    baselineCoveragePct: baseline.coveragePct,
     avgDelayMin: avgDelay,
     baselineDelayMin: baseline.avgDelayMin,
     delayReductionPct: Math.round((1 - totalDelay / Math.max(baseline.delayMin, 1)) * 100),
+    bundlingHoursSaved: Math.round(((baseline.downtimeMin - optimMin) / 60) * 10) / 10,
     defectsCleared: drafts.reduce((s, b) => s + b.defectIds.length, 0),
     deferredItems,
     occupancyBudgetMin: days * DAILY_OCCUPANCY_BUDGET_MIN,
@@ -526,6 +742,7 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
     suspendedByFog: lake.fogMode ? suspendedFog : 0,
     withheldByVip: lake.vipAlert ? withheldVip : 0,
     conflictsAvoided: baseline.conflicts,
+    aiConflicts: aiScore.conflicts,
     crewWaves: drafts.length,
     h0: hist[0], h1: hist[1], h2: hist[2], h3: hist[3], h4: hist[4], h5: hist[5], h6: hist[6], h7: hist[7],
   };
@@ -579,7 +796,7 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
   log.push(`Wave packing: ${drafts.length} sections → block length = longest department chain + ${SETUP_MIN} min lock-on`);
   log.push(`Exact placement search: ${drafts.length} blocks (${kpis.superBlocks} super-blocks) in ${genMs} ms`);
   if (deferredItems > 0) {
-    log.push(`Occupancy budget (${days} d × ${DAILY_OCCUPANCY_BUDGET_MIN} min/day) exhausted: ${deferredItems} lower-priority items on ${deferredSections.size} sections deferred to the next cycle with reason recorded — deliberately leaving capacity for tomorrow's emergency`);
+    log.push(`Occupancy budget (${days} d × ${DAILY_OCCUPANCY_BUDGET_MIN} min/day) exhausted: ${deferredItems} lower-priority items on ${deferredSections.length} sections deferred to the next cycle with reason recorded — deliberately leaving capacity for tomorrow's emergency`);
   }
   log.push(`vs sequential-silo baseline: downtime ${kpis.downtimeBaselineH} h → ${kpis.downtimeOptimizedH} h (↓${kpis.reductionPct}%), delay ${kpis.baselineDelayMin} → ${kpis.avgDelayMin} min/train, ${kpis.conflictsAvoided} occupancy conflicts eliminated`);
   log.push(`Monte Carlo stress test: ${RUNS} runs → resilience ${resilience}% (p50 ${p50} min, p95 ${p95} min)`);

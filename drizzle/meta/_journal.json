@@ -15,6 +15,13 @@
       "when": 1789030947645,
       "tag": "0001_optimal_raza",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789033474581,
+      "tag": "0002_tier1_policy_benchmark",
+      "breakpoints": true
     }
   ]
 }
