@@ -56,16 +56,31 @@ function Card({
 }
 
 export default function KpiStrip({ state }: { state: DashboardState }) {
-  const k = state.kpis;
-  const hasPlan = !!state.latestPlan;
-  const reduction = k.downtimeBaselineH > 0 ? Math.round((1 - k.downtimeOptimizedH / k.downtimeBaselineH) * 100) : 0;
+  const plan = state.latestPlan;
+  const hasPlan = !!plan;
+
+  // KPIs are in plan.kpis; resilienceScore is a top-level field on the plan
+  const kpis = (plan?.kpis ?? {}) as Record<string, number>;
+  const downtimeOptimizedH = kpis.downtimeOptimizedH ?? state.kpis.downtimeOptimizedH ?? 0;
+  const downtimeBaselineH = kpis.downtimeBaselineH ?? state.kpis.downtimeBaselineH ?? 0;
+  const bundlingPct = kpis.bundlingPct ?? state.kpis.bundlingPct ?? 0;
+  const avgDelayMin = kpis.avgDelayMin ?? state.kpis.avgDelayMin ?? 0;
+  // resilienceScore lives on plan.resilienceScore, not inside kpis JSON
+  const resilienceScore = plan?.resilienceScore ?? state.kpis.resilienceScore ?? 0;
+
+  const reduction = downtimeBaselineH > 0 ? Math.round((1 - downtimeOptimizedH / downtimeBaselineH) * 100) : 0;
+
+  // Build histogram sparkline from h0..h7 keys stored in kpis JSONB
+  const spark = hasPlan
+    ? [0, 1, 2, 3, 4, 5, 6, 7].map((i) => kpis[`h${i}`] ?? 0)
+    : undefined;
 
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
       <Card
         label="Asset Downtime"
-        value={hasPlan ? `${k.downtimeOptimizedH.toFixed(1)}h` : "—"}
-        sub={hasPlan ? `vs ${k.downtimeBaselineH.toFixed(1)}h manual baseline` : "Run optimizer to calculate"}
+        value={hasPlan ? `${downtimeOptimizedH.toFixed(1)}h` : "—"}
+        sub={hasPlan ? `vs ${downtimeBaselineH.toFixed(1)}h manual baseline` : "Run optimizer to calculate"}
         icon={<Timer size={14} />}
         tone="#f59e0b"
       />
@@ -78,25 +93,25 @@ export default function KpiStrip({ state }: { state: DashboardState }) {
       />
       <Card
         label="Super-Block Overlap"
-        value={hasPlan ? `${k.bundlingPct}%` : "—"}
+        value={hasPlan ? `${bundlingPct}%` : "—"}
         sub="Multi-department shared minutes"
         icon={<Boxes size={14} />}
         tone="#8b5cf6"
       />
       <Card
         label="Avg Train Delay"
-        value={hasPlan ? `${k.avgDelayMin.toFixed(1)}m` : "—"}
+        value={hasPlan ? `${avgDelayMin.toFixed(1)}m` : "—"}
         sub="Target < 8 min · baseline 28+ min"
         icon={<Gauge size={14} />}
         tone="#0ea5e9"
       />
       <Card
         label="Resilience Index"
-        value={hasPlan ? `${k.resilienceScore}/100` : "—"}
+        value={hasPlan ? `${resilienceScore.toFixed(1)}/100` : "—"}
         sub="500 Monte Carlo stress runs"
         icon={<ShieldCheck size={14} />}
         tone="#10b981"
-        spark={state.latestPlan ? [0, 1, 2, 3, 4, 5, 6, 7].map((i) => state.latestPlan!.kpis[`h${i}`] ?? 0) : undefined}
+        spark={spark}
       />
       <Card
         label="Open Defects"

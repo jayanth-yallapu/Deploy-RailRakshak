@@ -1,14 +1,16 @@
-import { NextResponse } from "next/server";
-import { completeJob } from "@/lib/engine/jobs";
+import { NextResponse } from 'next/server';
+import { db } from '@/db';
+import { jobs } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 
-export const dynamic = "force-dynamic";
-
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   try {
-    const body = await req.json();
-    await completeJob({ jobId: Number(body.jobId), photoData: body.photoData ? String(body.photoData) : undefined });
-    return NextResponse.json({ ok: true });
-  } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    const { jobId } = await request.json();
+    await db.update(jobs)
+      .set({ status: 'COMPLETED' })
+      .where(eq(jobs.id, jobId));
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

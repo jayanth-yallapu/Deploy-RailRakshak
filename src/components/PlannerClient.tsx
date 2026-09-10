@@ -422,7 +422,8 @@ export default function PlannerClient({ initial }: { initial: DashboardState }) 
                         color: d.aiScore > 70 ? "#fb7185" : d.aiScore > 45 ? "#fbbf24" : "#34d399",
                       }}
                     >
-                      {d.aiScore.toFixed(0)}
+                      {/* ✅ FIX: Null-safe toFixed with fallback */}
+                      {d.aiScore != null ? d.aiScore.toFixed(0) : '—'}
                     </span>
                   </td>
                   <td className="px-3 py-2.5 font-medium text-ink">{d.title}</td>

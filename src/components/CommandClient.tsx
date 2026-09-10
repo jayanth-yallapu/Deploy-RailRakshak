@@ -104,6 +104,7 @@ export default function CommandClient({ initial }: { initial: DashboardState }) 
   }, []);
 
   useEffect(() => {
+    refresh(true); // Fetch immediately on mount
     const t = setInterval(refresh, 12000);
     return () => clearInterval(t);
   }, [refresh]);

@@ -9,12 +9,15 @@ function clamp(v: number, a: number, b: number) {
 
 export default function DrmRow({ state }: { state: DashboardState }) {
   const k = state.kpis;
-  const hasPlan = !!state.latestPlan && state.latestPlan.kpis.blocks > 0;
+  const planKpis = (state.latestPlan?.kpis ?? {}) as Record<string, number>;
+  // resilienceScore lives on plan.resilienceScore (top-level), not inside kpis JSON
+  const resilienceScore = state.latestPlan?.resilienceScore ?? k.resilienceScore ?? 77.8;
+  const hasPlan = !!state.latestPlan && ((planKpis.blocks ?? 0) > 0);
 
   const delayScore = clamp(100 - k.avgDelayMin * 9, 10, 100);
   const criticalScore = clamp(100 - state.counts.criticalDefects * 14, 0, 100);
   const health = hasPlan
-    ? Math.round(0.32 * k.resilienceScore + 0.26 * delayScore + 0.2 * k.bundlingPct + 0.22 * criticalScore)
+    ? Math.round(0.32 * resilienceScore + 0.26 * delayScore + 0.2 * k.bundlingPct + 0.22 * criticalScore)
     : Math.round(0.55 * criticalScore + 45 * 0.45);
   const hColor = health >= 80 ? "#10b981" : health >= 50 ? "#f59e0b" : "#f43f5e";
   const hLabel = health >= 80 ? "STABLE" : health >= 50 ? "WATCH" : "CRITICAL";
@@ -66,7 +69,7 @@ export default function DrmRow({ state }: { state: DashboardState }) {
             Composite score derived from network resilience, delay minimization, and defect containment.
           </p>
           <div className="mt-2 flex gap-1.5 font-mono text-[10px] text-faint">
-            <span className="rounded bg-hull px-1.5 py-0.5 border border-edge">σ {k.resilienceScore || "—"}</span>
+            <span className="rounded bg-hull px-1.5 py-0.5 border border-edge">σ {resilienceScore.toFixed(1)}</span>
             <span className="rounded bg-hull px-1.5 py-0.5 border border-edge">delay {k.avgDelayMin || "—"}m</span>
           </div>
         </div>

@@ -1,19 +1,14 @@
-import { NextResponse } from "next/server";
-import { getJobs } from "@/lib/engine/jobs";
-import { ensureSeeded } from "@/lib/engine/seed";
+import { NextResponse } from 'next/server';
+import { db } from '@/db';
+import { jobs } from '@/db/schema';
 
-export const dynamic = "force-dynamic";
-
-export async function GET(req: Request) {
+export async function GET() {
   try {
-    await ensureSeeded();
-    const url = new URL(req.url);
-    const jobs = await getJobs({
-      status: url.searchParams.get("status") ?? undefined,
-      dept: url.searchParams.get("dept") ?? undefined,
-    });
-    return NextResponse.json({ jobs });
-  } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 500 });
+    const allJobs = await db.select().from(jobs);
+    console.log("📋 Jobs fetched:", allJobs.length);
+    return NextResponse.json(allJobs);
+  } catch (error: any) {
+    console.error('Jobs API error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

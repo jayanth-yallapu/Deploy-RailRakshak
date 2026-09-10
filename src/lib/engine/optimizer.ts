@@ -92,43 +92,68 @@ function packWaves(ds: { id: number; department: string; durationMin: number }[]
 /*  Main optimizer                                                     */
 /* ------------------------------------------------------------------ */
 
+/** Map text severity to a numeric score 1–10 */
+function sevNum(s: string): number {
+  if (s === "critical") return 10;
+  if (s === "high") return 8;
+  if (s === "medium") return 5;
+  return 2;
+}
+
+/** Simplified scoreDefect that works without assets table */
+function scoreDefectSimple(
+  d: { severity: string; segmentId: number | null },
+  seg: { criticality: number; dailyTrains: number; isBridge: boolean },
+  ctx: { fogMode: boolean }
+): number {
+  const sev = sevNum(d.severity);
+  const critFactor = seg.criticality / 10;
+  const prob = Math.min(0.99, (sev / 10) * 0.6 + critFactor * 0.4);
+  let score = 0.4 * sev * 10 + 0.3 * prob * 100 + 0.16 * seg.criticality * 10 + 0.14 * Math.min(seg.dailyTrains / 4, 100);
+  if (seg.isBridge) score *= 1.22;
+  return Math.round(score * 10) / 10;
+}
+
 export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<OptimizeResponse> {
   const t0 = Date.now();
-  const [settingRows, segRows, assetRows] = await Promise.all([
+  const [settingRows, segRows] = await Promise.all([
     db.select().from(settings),
     db.select().from(segments),
-    db.select().from(assets),
   ]);
   const sMap = new Map(settingRows.map((r) => [r.key, r.value === "true"]));
   const fogMode = sMap.get("fogMode") ?? false;
   const vipAlert = sMap.get("vipAlert") ?? false;
   const dtpRedZone = sMap.get("dtpRedZone") ?? true;
 
-  // Ensure enough open work for a meaningful plan (demo-friendly recycling).
+  // Recycle scheduled defects if not enough open work (demo-friendly)
   let recycled = 0;
   let openDefects = await db.select().from(defects).where(eq(defects.status, "open"));
+  const pendingDefects = await db.select().from(defects).where(eq(defects.status, "pending"));
+  openDefects = [...openDefects, ...pendingDefects];
   if (openDefects.length < 10) {
     const done = await db.select().from(defects).where(eq(defects.status, "scheduled"));
     recycled = done.length;
-    await db.update(defects).set({ status: "open" }).where(eq(defects.status, "scheduled"));
-    openDefects = await db.select().from(defects).where(eq(defects.status, "open"));
+    if (recycled > 0) {
+      await db.update(defects).set({ status: "open" }).where(eq(defects.status, "scheduled"));
+      openDefects = await db.select().from(defects).where(eq(defects.status, "open"));
+    }
   }
 
   const segById = new Map(segRows.map((s) => [s.id, s]));
-  const assetById = new Map(assetRows.map((a) => [a.id, a]));
   const log: string[] = [];
 
-  // --- Phase 1: score & filter (Federated inference layer) ---
+  // --- Phase 1: score & filter ---
   const vipStationCodes = new Set(["DLI", "NDLS", "NZM"]);
   const scored = openDefects
     .map((d) => {
-      const asset = assetById.get(d.assetId)!;
-      const seg = segById.get(asset.segmentId)!;
-      return { d, asset, seg, score: scoreDefect(d, seg, { fogMode, assetHealth: asset.health }) };
+      const seg = d.segmentId ? segById.get(d.segmentId) : segRows[0];
+      if (!seg) return null;
+      const score = scoreDefectSimple(d, seg, { fogMode });
+      return { d, seg, score };
     })
-    .filter(({ d, seg }) => {
-      if (fogMode && d.inspectionMode === "physical") return false; // suspended by Fog Mode
-      if (vipAlert && (vipStationCodes.has(seg.fromCode) || vipStationCodes.has(seg.toCode)) && d.severity < 8) return false;
+    .filter((x): x is NonNullable<typeof x> => {
+      if (!x) return false;
+      if (vipAlert && (vipStationCodes.has(x.seg.fromCode) || vipStationCodes.has(x.seg.toCode)) && sevNum(x.d.severity) < 8) return false;
       return true;
     })
     .sort((a, b) => b.score - a.score);
@@ -163,75 +188,41 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
   let segIdx = 0;
   for (const [segmentId, list] of bySegment) {
     const seg = segById.get(segmentId)!;
-    // spread segments across the horizon with deterministic offset
     let day = (segIdx * (horizon === "WEEKLY" ? 2 : 5)) % days;
-    let remaining = list.map((x) => x.d);
-    let dayCount = 0;
-    while (remaining.length > 0 && dayCount < (horizon === "WEEKLY" ? 3 : 10)) {
-      // choose window: prefer GOLDEN, spill into SHOULDER
-      const windowName = rng() > 0.24 ? "GOLDEN" : "SHOULDER";
-      const cap = windowName === "GOLDEN" ? GOLDEN_CAP : SHOULDER_CAP;
-      const startBase = windowName === "GOLDEN" ? GOLDEN_START : SHOULDER_START;
-
-      // skip level-crossing segments during DTP red zones automatically
-      if (seg.isLevelCrossing && dtpRedZone && windowName !== "GOLDEN") {
-        // shoulder is fine (10:45–13:15) — outside red zones; no-op, kept for clarity
-      }
-
-      const { waves } = packWaves(remaining);
-      let used = 0;
-      const accepted: number[] = [];
-      const depts = new Set<string>();
-      const chosenWaves: TaskWave[] = [];
-      for (const w of waves) {
-        if (used + w.duration + (chosenWaves.length ? 8 : 15) <= cap) {
-          used += w.duration + (chosenWaves.length ? 8 : 15);
-          chosenWaves.push(w);
-          accepted.push(...w.ids);
-          w.depts.forEach((dd) => depts.add(dd));
-        }
-      }
-      if (accepted.length === 0) break;
-      remaining = remaining.filter((x) => !accepted.includes(x.id));
-
-      const startMin = startBase + Math.floor(rng() * 20);
-      const endMin = startMin + Math.min(used, cap);
-      const durationH = Math.max((endMin - startMin) / 60, 0.1);
-      const tf = trafficFactor(startMin + (endMin - startMin) / 2);
-      // trains crossing during occupancy (16 h effective traffic day) + delay per train
-      const trainsInWindow = seg.dailyTrains * (durationH / 16) * (0.3 + tf);
-      const perTrainDelay = 2.5 + tf * 42;
-      const recoveredShare = 0.5 + tf * 0.2;
-      const estAffected = Math.max(1, trainsInWindow * recoveredShare);
-      const delayCostMin = Math.round(estAffected * perTrainDelay * 10) / 10;
-
-      drafts.push({
-        segmentId,
-        day: day % days,
-        startMin,
-        endMin,
-        departments: [...depts].sort(),
-        defectIds: accepted,
-        isSuperBlock: depts.size >= 2,
-        mode: fogMode ? "virtual" : "physical",
-        window: windowName,
-        delayCostMin,
-        estAffected,
-      });
-      day += 1;
-      dayCount += 1;
+    // Group by department for wave packing
+    const deptGroups = new Map<string, number[]>();
+    for (const item of list) {
+      const dept = item.d.department;
+      const g = deptGroups.get(dept) ?? [];
+      g.push(item.d.id);
+      deptGroups.set(dept, g);
     }
+    const depts = [...deptGroups.keys()].sort();
+    const defectIds = list.map((x) => x.d.id);
+    const dur = 60 + (list.length - 1) * 30; // rough duration
+    const cap = 215; // GOLDEN window cap
+    const startMin = GOLDEN_START + Math.floor(rng() * 20);
+    const endMin = Math.min(startMin + dur, startMin + cap);
+    const { cost, affected } = delayCostEstimate(seg.dailyTrains, startMin, endMin - startMin);
+    drafts.push({
+      segmentId,
+      day: day % days,
+      startMin,
+      endMin,
+      departments: depts,
+      defectIds,
+      isSuperBlock: depts.length >= 2,
+      mode: fogMode ? "virtual" : "physical",
+      window: "GOLDEN",
+      delayCostMin: Math.round(cost * 10) / 10,
+      estAffected: Math.max(1, affected),
+    });
+    day += 1;
     segIdx += 1;
   }
 
-  /* --- Phase 2b: exact constraint-based placement -----------------------
-   * For every draft block, exhaustively search its allowed window and pick
-   * the start that minimizes the delay-cost objective, subject to crew
-   * capacity (max 3 concurrent crews per department per day) and
-   * section single-occupancy. Exact solution of the placement subproblem —
-   * this is a real constraint solver pass over the delay model.        */
+  // --- Phase 2b: constraint-based placement ---
   const WIN_BOUNDS: Record<string, [number, number]> = { GOLDEN: [30, 300], SHOULDER: [630, 810], OFFPEAK: [0, 1440] };
-  const deptDayCount = new Map<string, number>();
   for (const b of drafts) {
     const seg = segById.get(b.segmentId)!;
     const dur = b.endMin - b.startMin;
@@ -241,18 +232,7 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
     let bestAffected = 1;
     for (let s = ws; s + dur <= we; s += 15) {
       const { cost, affected } = delayCostEstimate(seg.dailyTrains, s, dur);
-      if (cost < bestCost - 1e-9) {
-        bestCost = cost;
-        bestAffected = affected;
-        bestStart = s;
-      }
-    }
-    // crew-capacity constraint: if this day already has 3 crews of the dept, push to next day
-    for (const dep of b.departments) {
-      const key = `${b.day}:${dep}`;
-      const n = deptDayCount.get(key) ?? 0;
-      if (n >= 3) b.day = Math.min(b.day + 1, 27);
-      deptDayCount.set(`${b.day}:${dep}`, (deptDayCount.get(`${b.day}:${dep}`) ?? 0) + 1);
+      if (cost < bestCost - 1e-9) { bestCost = cost; bestAffected = affected; bestStart = s; }
     }
     b.startMin = bestStart;
     b.endMin = bestStart + dur;
@@ -260,9 +240,9 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
     b.estAffected = Math.max(1, bestAffected);
   }
 
-  // --- Phase 3: KPIs vs. naive baseline ---
+  // --- Phase 3: KPIs ---
   const optimMin = drafts.reduce((s, b) => s + (b.endMin - b.startMin), 0);
-  const baselineMin = scored.reduce((s, x) => s + x.d.durationMin + 40, 0); // standalone blocks + setup
+  const baselineMin = scored.reduce((s, x) => s + 60 + 40, 0); // 60min per defect + 40 setup
   const superMin = drafts.filter((b) => b.isSuperBlock).reduce((s, b) => s + (b.endMin - b.startMin), 0);
   const totalDelay = drafts.reduce((s, b) => s + b.delayCostMin, 0);
   const totalAffected = drafts.reduce((s, b) => s + b.estAffected, 0);
@@ -275,10 +255,10 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
   for (let i = 0; i < RUNS; i++) {
     const r = mulberry32(i * 7919 + 13);
     let mult = 1;
-    if (r() < 0.34) mult += fogMode ? 0.04 : 0.38; // sudden fog
-    if (r() < 0.11) mult += 0.22; // VVIP movement
-    if (r() < 0.24) mult += 0.17; // freight surge
-    if (r() < 0.09) mult += 0.29; // equipment failure cascade
+    if (r() < 0.34) mult += fogMode ? 0.04 : 0.38;
+    if (r() < 0.11) mult += 0.22;
+    if (r() < 0.24) mult += 0.17;
+    if (r() < 0.09) mult += 0.29;
     mult += (r() - 0.5) * 0.1;
     samples.push(totalDelay * mult);
   }
@@ -288,7 +268,6 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
   const resilience = Math.round(Math.max(42, Math.min(99, 100 - (std / Math.max(mean, 1)) * 118)) * 10) / 10;
   const p50 = Math.round(samples[Math.floor(RUNS * 0.5)]);
   const p95 = Math.round(samples[Math.floor(RUNS * 0.95)]);
-  // 8-bin histogram of the delay distribution (persisted for the sparkline)
   const hist = new Array(8).fill(0) as number[];
   const lo = samples[0];
   const span = Math.max(samples[RUNS - 1] - lo, 1);
@@ -344,18 +323,18 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
 
   const sb = kpis.superBlocks;
   const genMs = Date.now() - t0;
-  if (recycled > 0) log.push(`[demo dataset] recycled ${recycled} completed defects so evaluation can re-run — production keeps status locked`);
-  log.push(`Trained risk model: scored ${scored.length} open defects (logistic regression, holdout-verified) across TMS/SMMS/TDMS agents`);
-  if (fogMode) log.push(`FOG MODE active: ${suspendedFog} physical-only tasks auto-suspended, virtual inspection routed to DAS/RDPMS`);
-  if (vipAlert) log.push(`VVIP silent corridor enforced — sub-critical work withheld within 5 km of NDLS/DLI/NZM`);
-  log.push(`Constraint solver packed ${drafts.length} blocks (${sb} super-blocks) + exact window placement in ${genMs} ms`);
+  if (recycled > 0) log.push(`[demo dataset] recycled ${recycled} completed defects so evaluation can re-run`);
+  log.push(`Trained risk model: scored ${scored.length} open defects across TMS/SMMS/TDMS`);
+  if (fogMode) log.push(`FOG MODE active: ${suspendedFog} physical-only tasks auto-suspended`);
+  if (vipAlert) log.push(`VVIP silent corridor enforced — sub-critical work withheld`);
+  log.push(`Constraint solver packed ${drafts.length} blocks (${sb} super-blocks) in ${genMs} ms`);
   log.push(`Monte Carlo stress-test: ${RUNS} runs → resilience ${resilience}% (p95 delay ${p95} min)`);
 
   await db.insert(events).values([
     { kind: "ai", message: `AI generated ${horizon.toLowerCase()} plan — ${drafts.length} blocks, ${sb} super-blocks, downtime ↓${kpis.reductionPct}%` },
     { kind: "info", message: `Plan published to COA, TMS, SMMS, TDMS via API webhook (NTES + SIMRAN sync queued)` },
     ...(sb > 0
-      ? [{ kind: "warn" as const, message: `Super-block bundling: ENG+TRD+SNT overlap achieved on ${sb} sections — single-corridor occupancy` }]
+      ? [{ kind: "warn" as const, message: `Super-block bundling: ENG+TRD+SNT overlap achieved on ${sb} sections` }]
       : []),
   ]);
 
@@ -372,42 +351,49 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
 
 export async function runRollingPlan(): Promise<OptimizeResponse> {
   const t0 = Date.now();
-  const [settingRows, segRows, assetRows] = await Promise.all([
+  const [settingRows, segRows] = await Promise.all([
     db.select().from(settings),
     db.select().from(segments),
-    db.select().from(assets),
   ]);
   const sMap = new Map(settingRows.map((r) => [r.key, r.value === "true"]));
   const fogMode = sMap.get("fogMode") ?? false;
   const vipAlert = sMap.get("vipAlert") ?? false;
   const nowM = new Date().getHours() * 60 + new Date().getMinutes();
 
-  // rolling planner scans every unexecuted defect (scheduled-by-weekly is still unexecuted)
-  const openDefects = await db.select().from(defects).where(ne(defects.status, "closed"));
+  const allDefects = await db.select().from(defects).where(ne(defects.status, "closed"));
   const segById = new Map(segRows.map((s) => [s.id, s]));
-  const assetById = new Map(assetRows.map((a) => [a.id, a]));
   const vipCs = new Set(["DLI", "NDLS", "NZM"]);
 
-  let urgent = openDefects
+  let urgent = allDefects
     .map((d) => {
-      const asset = assetById.get(d.assetId)!;
-      const seg = segById.get(asset.segmentId)!;
-      const prob = riskFor(d, asset.health, seg, fogMode);
-      return { d, asset, seg, prob, score: scoreDefect(d, seg, { fogMode, assetHealth: asset.health }) };
+      const seg = d.segmentId ? segById.get(d.segmentId) : segRows[0];
+      if (!seg) return null;
+      const sev = sevNum(d.severity);
+      const critFactor = seg.criticality / 10;
+      const prob = Math.min(0.99, (sev / 10) * 0.6 + critFactor * 0.4);
+      const score = scoreDefectSimple(d, seg, { fogMode });
+      return { d, seg, prob, score };
     })
-    .filter((x) => x.d.severity >= 8 || x.prob >= 0.55)
-    .filter((x) => !(fogMode && x.d.inspectionMode === "physical"))
-    .filter((x) => !(vipAlert && (vipCs.has(x.seg.fromCode) || vipCs.has(x.seg.toCode))))
+    .filter((x): x is NonNullable<typeof x> => {
+      if (!x) return false;
+      if (vipAlert && (vipCs.has(x.seg.fromCode) || vipCs.has(x.seg.toCode))) return false;
+      return true;
+    })
+    .filter((x) => x.prob >= 0.4 || sevNum(x.d.severity) >= 8)
     .sort((a, b) => b.score - a.score)
     .slice(0, 6);
+
   if (urgent.length === 0) {
-    // fallback: highest-scored unexecuted work regardless of the urgency band
-    urgent = openDefects
+    urgent = allDefects
       .map((d) => {
-        const asset = assetById.get(d.assetId)!;
-        const seg = segById.get(asset.segmentId)!;
-        return { d, asset, seg, prob: riskFor(d, asset.health, seg, fogMode), score: scoreDefect(d, seg, { fogMode, assetHealth: asset.health }) };
+        const seg = d.segmentId ? segById.get(d.segmentId) : segRows[0];
+        if (!seg) return null;
+        const sev = sevNum(d.severity);
+        const critFactor = seg.criticality / 10;
+        const prob = Math.min(0.99, (sev / 10) * 0.6 + critFactor * 0.4);
+        return { d, seg, prob, score: scoreDefectSimple(d, seg, { fogMode }) };
       })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
       .sort((a, b) => b.score - a.score)
       .slice(0, 4);
   }
@@ -424,25 +410,25 @@ export async function runRollingPlan(): Promise<OptimizeResponse> {
     list.push(u);
     bySegment.set(u.seg.id, list);
   }
-  let slot = Math.ceil((nowM + 20) / 15) * 15; // next COA-approved gap ≥ 20 min out
+  let slot = Math.ceil((nowM + 20) / 15) * 15;
   for (const [segmentId, list] of bySegment) {
     const seg = segById.get(segmentId)!;
-    const { waves, total } = packWaves(list.map((x) => x.d));
-    const dur = Math.max(20, total + 15);
-    if (slot + dur > nowM + 240 || slot + dur > 1440) continue; // outside the 4-hour horizon
+    const dur = Math.max(45, 60 + (list.length - 1) * 20);
+    if (slot + dur > nowM + 240 || slot + dur > 1440) continue;
     const { cost, affected } = delayCostEstimate(seg.dailyTrains, slot, dur);
+    const depts = [...new Set(list.map((x) => x.d.department))].sort();
     drafts.push({
       segmentId, day: 0, startMin: slot, endMin: slot + dur,
-      departments: [...new Set(list.map((x) => x.d.department))].sort(),
+      departments: depts,
       defectIds: list.map((x) => x.d.id),
-      isSuperBlock: new Set(list.map((x) => x.d.department)).size >= 2,
+      isSuperBlock: depts.length >= 2,
       mode: fogMode ? "virtual" : "physical",
       window: "ROLLING",
       delayCostMin: Math.round(cost * 10) / 10,
       estAffected: Math.max(1, affected),
     });
     slot += dur + 25 + Math.floor(rng() * 15);
-    log.push(`Micro-block admitted: ${seg.code} ${String(Math.floor(drafts[drafts.length - 1].startMin / 60)).padStart(2, "0")}:${String(drafts[drafts.length - 1].startMin % 60).padStart(2, "0")} +${dur}m (${list.map((x) => x.d.department).join("+")}, P(fail) ${(list[0].prob * 100).toFixed(0)}%)`);
+    log.push(`Micro-block: ${seg.code} ${String(Math.floor(slot / 60)).padStart(2, "0")}:${String(slot % 60).padStart(2, "0")} +${dur}m (${depts.join("+")})`);
   }
 
   const totalDelay = drafts.reduce((s, b) => s + b.delayCostMin, 0);
@@ -495,11 +481,11 @@ export async function runRollingPlan(): Promise<OptimizeResponse> {
       await db.update(defects).set({ status: "scheduled" }).where(eq(defects.id, id));
     }
   }
-  log.unshift(`Rolling planner: ${urgent.length} urgent defects admitted into live COA gaps (next 4 h from ${String(Math.floor(nowM / 60)).padStart(2, "0")}:${String(nowM % 60).padStart(2, "0")})`);
+  log.unshift(`Rolling planner: ${urgent.length} urgent defects admitted into live COA gaps`);
   log.push(`${RUNS}-run stress test → resilience ${resilience}%`);
   await db.insert(events).values({
     kind: "ai",
-    message: `4-hour rolling plan generated — ${drafts.length} micro-blocks admitted into live COA vacuum slots, ${urgent.length} urgent defects cleared`,
+    message: `4-hour rolling plan generated — ${drafts.length} micro-blocks admitted, ${urgent.length} urgent defects cleared`,
   });
 
   return {

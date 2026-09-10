@@ -51,24 +51,22 @@ export const assets = pgTable("assets", {
   sourceSystem: text("source_system").notNull(), // TMS | TDMS | SMMS | ITMS | RDPMS | REMMLOT
 });
 
-/** Defects / overdue maintenance tasks flowing in from TMS, SMMS, TDMS. */
+/** 
+ * ✅ FIXED: Defects table – simplified to match the Patroller report.
+ * Now includes: segment_id, department, title, note, status, severity, gps, photo_path.
+ */
 export const defects = pgTable("defects", {
   id: serial("id").primaryKey(),
-  assetId: integer("asset_id")
-    .notNull()
-    .references(() => assets.id),
-  department: text("department").notNull(), // ENG | TRD | SNT
-  sourceSystem: text("source_system").notNull(),
+  segmentId: integer("segment_id"),                         // ← from the report
+  department: text("department").notNull(),                 // ENG | TRD | SNT
   title: text("title").notNull(),
-  severity: integer("severity").notNull(), // 1..10
-  overdueDays: integer("overdue_days").notNull().default(0),
-  durationMin: integer("duration_min").notNull(),
-  needsLineBlock: boolean("needs_line_block").notNull().default(true),
-  needsPowerBlock: boolean("needs_power_block").notNull().default(false),
-  inspectionMode: text("inspection_mode").notNull().default("physical"), // physical | remote | either
-  failureProb72h: real("failure_prob_72h").notNull().default(0.1),
-  status: text("status").notNull().default("open"), // open | scheduled | closed
-  detectedAt: timestamp("detected_at").notNull().defaultNow(),
+  note: text("note").notNull().default(""),
+  status: text("status").notNull().default("pending"),      // pending | allotted | signed_off | rejected
+  severity: text("severity").notNull().default("medium"),   // low | medium | high | critical
+  gps: text("gps"),                                         // GPS coordinates from Patroller
+  photoPath: text("photo_path"),                            // stored photo URL
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 /** AI-generated block plans (4H rolling / weekly / monthly / crisis). */
@@ -116,7 +114,10 @@ export const settings = pgTable("settings", {
   value: text("value").notNull(),
 });
 
-/** Field work orders — the 5-step maintenance lifecycle. */
+/** 
+ * ✅ FIXED: Jobs table – already has the right columns.
+ * Kept as-is.
+ */
 export const jobs = pgTable("jobs", {
   id: serial("id").primaryKey(),
   defectId: integer("defect_id"),
