@@ -55,11 +55,11 @@ const PAGES = [
   // These three used to be `shell: true` (i.e. "we could not find a stable marker, so just check the
   // layout"). Each now has real ones, so a page that renders only its header — or loses a panel to a
   // crash boundary — fails the smoke gate instead of passing it.
-  { path: "/planner", name: "block planner", expect: ["Strategic Block Optimization Engine", "Block rule book"] },
+  { path: "/planner", name: "block planner", expect: ["Strategic Block Optimization Engine", "Block rule book", "Incremental re-plan"] },
   { path: "/simulation", name: "testing lab", expect: ["Evidence", "divisional allocation meeting"] },
   { path: "/field", name: "field work", expect: [SHELL], shell: true },
   { path: "/jobs", name: "karmi job portal", expect: [SHELL], shell: true },
-  { path: "/patrol", name: "patroller reporting", expect: ["Patroller Field Handset", "Observed Defect Type"] },
+  { path: "/patrol", name: "patroller reporting", expect: ["Patroller Field Handset", "Observed Defect Type", "Gravity As Observed"] },
 ];
 
 /** Endpoints that must answer with JSON (GET only; POSTs are exercised by verify.mjs). */
@@ -69,6 +69,8 @@ const APIS = [
   { path: "/api/defects", name: "defects", needKeys: ["defects", "count"], needList: "defects" },
   { path: "/api/jobs", name: "jobs", needKeys: ["jobs", "count"], needList: "jobs" },
   { path: "/api/ingest?system=TMS", name: "ingest TMS", needKeys: ["contractVersion", "records"] },
+  // Read-only: GET must give the plan chain without creating or touching any plan.
+  { path: "/api/replan", name: "re-plan chain", needKeys: ["chain", "planId", "diff"] },
 ];
 
 async function getPage(p) {

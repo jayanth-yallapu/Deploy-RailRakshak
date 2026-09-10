@@ -17,6 +17,18 @@ export async function PATCH(req: Request) {
     const endMin = Math.max(startMin + 15, Math.min(1440, Math.round(Number(body.endMin))));
     const [b] = await db.select().from(blockItems).where(eq(blockItems.id, id));
     if (!b) return NextResponse.json({ error: "block not found" }, { status: 404 });
+    // A block whose job is in execution is protected by the plan, not just by the rule book: the line
+    // is already under possession. This is the one edit the endpoint refuses outright.
+    if (b.status === "locked") {
+      return NextResponse.json(
+        {
+          error: "Block is locked: crews are signed on and the line is under possession",
+          blockItemId: id,
+          hint: "Close or extend the job first — a re-plan cannot un-start a gang either.",
+        },
+        { status: 409 }
+      );
+    }
     const [seg] = await db.select().from(segments).where(eq(segments.id, b.segmentId));
 
     const durationH = (endMin - startMin) / 60;

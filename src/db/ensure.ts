@@ -15,6 +15,9 @@ const TIER1_DDL = [
   `ALTER TABLE "block_items" ADD COLUMN IF NOT EXISTS "policy" jsonb`,
   `ALTER TABLE "block_items" ADD COLUMN IF NOT EXISTS "explain" jsonb`,
   `ALTER TABLE "block_items" ADD COLUMN IF NOT EXISTS "override_reason" text`,
+  `ALTER TABLE "plans" ADD COLUMN IF NOT EXISTS "supersedes_id" integer`,
+  `ALTER TABLE "plans" ADD COLUMN IF NOT EXISTS "trigger_note" text`,
+  `ALTER TABLE "plans" ADD COLUMN IF NOT EXISTS "diff" jsonb`,
   `CREATE TABLE IF NOT EXISTS "benchmarks" (
      "id" serial PRIMARY KEY NOT NULL,
      "ran_at" timestamp DEFAULT now() NOT NULL,

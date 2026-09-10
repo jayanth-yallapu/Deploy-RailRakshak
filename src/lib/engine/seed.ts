@@ -467,11 +467,11 @@ export async function ensureSeeded(force = false): Promise<void> {
     return;
   }
   console.log(`[seed] lake incomplete (${JSON.stringify(shape)}) — rebuilding from network.ts grid`);
-  await seed();
+  await seed({ force });
   checkedThisProcess = true;
 }
 
-export async function seed(): Promise<LakeShape> {
+export async function seed(opts: { force?: boolean } = {}): Promise<LakeShape> {
   // Serialise rebuilds across processes. Without this, two Next instances (dev + prod, or two
   // replicas) sharing a database can interleave: A truncates, B sees an empty lake and truncates
   // again mid-insert, and both end up with half-written data — a "works alone, breaks together"
@@ -481,7 +481,11 @@ export async function seed(): Promise<LakeShape> {
   await ensureTier1Schema();
   await db.execute(sql`select pg_advisory_lock(hashtext('railrakshak_seed'))`);
   try {
-    if (isLakeHealthy(await lakeShape())) {
+    // The health re-check exists to stop a second caller rebuilding a lake the first one just fixed.
+    // It must not also swallow an *explicit* reset: with `{ force: true }` the caller asked for a
+    // rebuild (CI phases, the demo "reset" button), and returning the healthy-but-dirty lake left
+    // every test-created defect in the pool, so the "deterministic" lake drifted by two rows a run.
+    if (!opts.force && isLakeHealthy(await lakeShape())) {
       await db.execute(sql`select pg_advisory_unlock(hashtext('railrakshak_seed'))`);
       return await lakeShape();
     }

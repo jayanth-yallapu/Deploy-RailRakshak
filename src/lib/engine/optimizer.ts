@@ -330,6 +330,11 @@ interface DraftBlock {
   alternatives: { startMin: number; cost: number; penalty?: number; label?: string }[];
   /** Benchmark bookkeeping: which working unit produced this block. */
   unitKey?: string;
+  /** Immovable: a crew is already signed on, so the block cannot be edited or rescheduled. */
+  frozen?: boolean;
+  /** Pinned-but-editable: copied through by an incremental re-plan to keep the schedule stable. */
+  carried?: boolean;
+  frozenReason?: string;
   /** Why this block exists, in this slot, at this length — see `BlockExplanation`. */
   explain?: BlockExplanation;
 }
@@ -354,7 +359,10 @@ function placeBlock(
   urgency: number,
   busy: Map<string, [number, number][]>,
   dayBudgetLeft: number[],
-  windows: { name: string; from: number; to: number }[] = WINDOWS
+  windows: { name: string; from: number; to: number }[] = WINDOWS,
+  /** Extra objective cost of *moving* this block (incremental re-planning). It enters `total` only:
+   *  delay figures reported to the user must stay the physical delay, not the preference term. */
+  churnCost?: (day: number, start: number) => number
 ): DraftBlock | null {
   interface Placement { day: number; start: number; total: number; delay: number; affected: number; window: string }
   let best: Placement | null = null;
@@ -371,10 +379,11 @@ function placeBlock(
         const taken = busy.get(`${seg.id}:${day}`) ?? [];
         if (taken.some(([s, e]) => overlaps(start - RECOVERY_GAP_MIN, start + dur + RECOVERY_GAP_MIN, s, e))) continue;
         const { cost, affected } = delayCostEstimate(seg.dailyTrains, start, dur);
-        // `total` is the search objective (delay cost + horizon/spread preference). Only `cost` is
+        const churn = churnCost ? churnCost(day, start) : 0;
+        // `total` is the search objective (delay cost + horizon/spread preference + churn). Only `cost` is
         // a delay figure and only `cost` may be reported as one — mixing the two inflated the
         // plan-level "min delay per train" KPI by the size of the preference term.
-        const total = cost + dayPenalty;
+        const total = cost + dayPenalty + churn;
         if (!best || total < best.total) {
           if (best) {
             second.cost = best.total;
@@ -610,8 +619,36 @@ const SEG_COUNT = 23;
  * Groups by section, packs each section's tasks into department waves (block length = the longest
  * chain + lock-on), then places each block by exhaustive search under the occupancy budget.
  */
+/** A block the ground has already committed: crews signed on, line already protected. */
+export interface FrozenBlock {
+  segmentId: number;
+  day: number;
+  startMin: number;
+  endMin: number;
+  departments: string[];
+  defectIds: number[];
+  isSuperBlock: boolean;
+  mode: string;
+  window: string;
+  delayCostMin: number;
+  estAffected: number;
+  reason: string;
+  /** true (default) = crews are committed, so the block is immovable and stored as `locked`.
+   *  false = carried through unchanged by an incremental re-plan: it still occupies the line, but a
+   *  planner may drag it. Only the first kind is a safety lock. */
+  lock?: boolean;
+}
+
 export interface PlanPoolOptions {
   fogMode?: boolean;
+  /** Blocks pinned into the schedule before the search starts. They occupy the line, spend the night's
+   *  budget, and their work items leave the pool. `lock: true` ones are immovable — re-planning cannot
+   *  un-start a gang, which is a safety property, not a nicety; `lock: false` ones are the incremental
+   *  re-planner keeping a schedule it has no reason to touch. */
+  frozen?: FrozenBlock[];
+  /** Churn aversion. `weight` is what the room pays, in objective units, to disturb a notified block
+   *  at all, on top of a term proportional to how far it moves (minutes and nights). */
+  sticky?: { bySection: Map<number, { day: number; startMin: number; endMin: number }>; weight: number };
   /** "score" = highest-risk section gets the scarce night (product). "arrival" = the order the
    *  departments happened to table their lists, which is how a divisional meeting actually runs. */
   order?: "score" | "arrival";
@@ -640,19 +677,66 @@ export function planPool(
 } {
   const bundle = opts.bundle !== false;
   const conventional = opts.placement === "conventional";
+  const frozen = opts.frozen ?? [];
+  const sticky = opts.sticky;
+  const churnWeight = sticky?.weight ?? 0;
+
+  const busy = new Map<string, [number, number][]>();
+  const dayBudgetLeft = new Array(days).fill(DAILY_OCCUPANCY_BUDGET_MIN);
+  const drafts: DraftBlock[] = [];
+
+  // Committed work first: occupy the line, spend the night's budget, copy the block through verbatim.
+  const frozenIds = new Set<number>();
+  for (const f of frozen) {
+    const key = `${f.segmentId}:${f.day}`;
+    busy.set(key, [...(busy.get(key) ?? []), [f.startMin, f.endMin]]);
+    dayBudgetLeft[f.day] -= f.endMin - f.startMin;
+    for (const id of f.defectIds) frozenIds.add(id);
+    drafts.push({
+      segmentId: f.segmentId,
+      day: f.day,
+      startMin: f.startMin,
+      endMin: f.endMin,
+      departments: f.departments,
+      defectIds: f.defectIds,
+      isSuperBlock: f.isSuperBlock,
+      mode: f.mode,
+      window: f.window,
+      delayCostMin: f.delayCostMin,
+      estAffected: f.estAffected,
+      alternatives: [],
+      frozen: f.lock !== false,
+      carried: f.lock === false,
+      frozenReason: f.reason,
+    });
+  }
+
+  /** Cost of disturbing the slot a block was notified in. Same slot costs nothing; the further it
+   *  moves, the more it costs — so the solver prefers the smallest edit that fits the new reality. */
+  const churnCostFor = (segId: number): ((day: number, start: number) => number) | undefined => {
+    const prev = sticky?.bySection.get(segId);
+    if (!prev || !churnWeight) return undefined;
+    return (day: number, start: number) => {
+      if (day === prev.day && start === prev.startMin && endOf(segId) === prev.endMin) return 0;
+      const slide = Math.abs(start - prev.startMin) + 1440 * Math.abs(day - prev.day);
+      return churnWeight + Math.min(900, slide);
+    };
+    function endOf(id: number) {
+      return sticky!.bySection.get(id)?.endMin ?? -1;
+    }
+  };
   const pad = 1 + (opts.paddingPct ?? 0) / 100;
   const rng = opts.rng ?? (() => 0.5);
 
+  // Committed items are already in the plan; they must not be placed a second time.
+  const pool = frozenIds.size ? schedulable.filter((c) => !frozenIds.has(c.d.id)) : schedulable;
   const bySegment = new Map<number, Candidate[]>();
-  for (const c of schedulable) {
+  for (const c of pool) {
     const list = bySegment.get(c.seg.id) ?? [];
     list.push(c);
     bySegment.set(c.seg.id, list);
   }
 
-  const busy = new Map<string, [number, number][]>();
-  const dayBudgetLeft = new Array(days).fill(DAILY_OCCUPANCY_BUDGET_MIN);
-  const drafts: DraftBlock[] = [];
   const deferredSections = new Set<string>();
   let deferredItems = 0;
   /** How many double-bookings the room had to arbitrate. Not a penalty term — a *count* of manual
@@ -696,7 +780,7 @@ export function planPool(
     const maxSev = Math.max(...u.list.map((c) => c.scored.severity));
     const b = conventional
       ? placeConventional(u.seg, dur, days, busy, dayBudgetLeft, deptDayUsed, u.dept, rng, () => (arbitrations += 1))
-      : placeBlock(u.seg, dur, days, maxSev, busy, dayBudgetLeft);
+      : placeBlock(u.seg, dur, days, maxSev, busy, dayBudgetLeft, WINDOWS, churnCostFor(u.seg.id));
     if (!b) {
       deferredSections.add(u.seg.code);
       deferredItems += u.list.length;
@@ -728,6 +812,9 @@ export function planPool(
       );
     }
     if (maxSev >= 8) why.push(`carries a severity-${maxSev} item: cannot wait for a cleaner night`);
+    const wasSticky = sticky?.bySection.get(u.seg.id);
+    if (wasSticky && b.day === wasSticky.day && b.startMin === wasSticky.startMin)
+      why.push(`kept in its notified slot — moving it would disturb crews already working to it`);
     b.explain = {
       why,
       terms: driver.scored.contributions,
@@ -822,18 +909,6 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
   const span = Math.max(samples[RUNS - 1] - lo, 1);
   for (const v of samples) hist[Math.min(7, Math.floor(((v - lo) / span) * 8))] += 1;
 
-  const rollScore = scorePlan(
-    drafts.map((b) => ({
-      segId: b.segmentId,
-      day: b.day,
-      startMin: b.startMin,
-      endMin: b.endMin,
-      dailyTrains: lake.segById.get(b.segmentId)?.dailyTrains ?? 60,
-      depts: b.departments,
-    })),
-    lake.segById.size
-  );
-
   const kpis = {
     downtimeBaselineH: Math.round((baseline.downtimeMin / 60) * 10) / 10,
     downtimeOptimizedH: Math.round((optimMin / 60) * 10) / 10,
@@ -859,6 +934,7 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
     withheldByVip: lake.vipAlert ? withheldVip : 0,
     conflictsAvoided: baseline.conflicts,
     aiConflicts: aiScore.conflicts,
+    frozenBlocks: drafts.filter((b) => b.frozen).length,
     crewWaves: drafts.length,
     h0: hist[0], h1: hist[1], h2: hist[2], h3: hist[3], h4: hist[4], h5: hist[5], h6: hist[6], h7: hist[7],
   };
@@ -887,7 +963,17 @@ export async function runOptimizer(horizon: "WEEKLY" | "MONTHLY"): Promise<Optim
         mode: b.mode,
         window: b.window,
         delayCostMin: b.delayCostMin,
-        explain: (b.explain ?? null) as Record<string, unknown> | null,
+        // ?? binds tighter than the conditional, so the fallback chain needs its own parentheses:
+        // without them `(b.explain ?? b.frozen) ? stub : …` replaced every real explanation with the
+        // frozen stub. Keep them, and keep the cast on the whole expression.
+        explain: (b.explain ??
+          (b.frozen
+            ? { frozenReason: b.frozenReason ?? "crew signed on" }
+            : b.carried
+              ? { carried: true, frozenReason: b.frozenReason }
+              : null)) as Record<string, unknown> | null,
+        // `locked` is the only state in which a block may not be moved by hand (see PATCH /api/blocks).
+        status: b.frozen ? "locked" : "proposed",
       }))
     );
     const allIds = drafts.flatMap((b) => b.defectIds);
@@ -1041,6 +1127,8 @@ export async function runRollingPlan(): Promise<OptimizeResponse> {
     bundlingHoursSaved: Math.round(((baseline.downtimeMin - optimMin) / 60) * 10) / 10,
     delayTrainMin: Math.round(totalDelay),
     baselineDelayTrainMin: Math.round(baseline.delayMin),
+    frozenBlocks: 0,
+    crewWaves: drafts.length,
     h0: hist[0], h1: hist[1], h2: hist[2], h3: hist[3], h4: hist[4], h5: hist[5], h6: hist[6], h7: hist[7],
   };
 
@@ -1063,7 +1151,17 @@ export async function runRollingPlan(): Promise<OptimizeResponse> {
         mode: b.mode,
         window: b.window,
         delayCostMin: b.delayCostMin,
-        explain: (b.explain ?? null) as Record<string, unknown> | null,
+        // ?? binds tighter than the conditional, so the fallback chain needs its own parentheses:
+        // without them `(b.explain ?? b.frozen) ? stub : …` replaced every real explanation with the
+        // frozen stub. Keep them, and keep the cast on the whole expression.
+        explain: (b.explain ??
+          (b.frozen
+            ? { frozenReason: b.frozenReason ?? "crew signed on" }
+            : b.carried
+              ? { carried: true, frozenReason: b.frozenReason }
+              : null)) as Record<string, unknown> | null,
+        // `locked` is the only state in which a block may not be moved by hand (see PATCH /api/blocks).
+        status: b.frozen ? "locked" : "proposed",
       }))
     );
     await db
@@ -1132,10 +1230,12 @@ async function emptyPlan(horizon: string, why: string): Promise<PlanDTO> {
         policyCompliantBlocks: 0,
         policyViolations: 0,
         policyWarnings: 0,
-        resilienceScore: 0,
+        // resilienceScore is a plans column, not a kpis key — the DTO and state.ts read the column,
+        // so duplicating it here would give the same figure two sources of truth.
         occupancyBudgetMin: 0,
         occupancyUsedMin: 0,
         crewWaves: 0,
+        frozenBlocks: 0,
         h0: 0, h1: 0, h2: 0, h3: 0, h4: 0, h5: 0, h6: 0, h7: 0,
       },
     })
@@ -1162,6 +1262,21 @@ export async function policyEnv() {
  * Gantt and the approval screen render the same compliance state without recomputing it per client.
  * Returns the plan-level report for the caller's log / KPI.
  */
+/**
+ * Same verdict as `attachPolicyToPlan`, computed from in-memory blocks and with no writes — a dry run
+ * has to show what the rule book would say about a plan that does not exist yet. Both call
+ * `evaluatePlanPolicy` with the same environment, so a dry-run preview cannot disagree with the
+ * figure the published row ends up carrying.
+ */
+export async function evaluateDraftPolicy(
+  drafts: { segmentId: number; day: number; startMin: number; endMin: number; departments: string[]; mode: string }[]
+) {
+  return evaluatePlanPolicy(
+    drafts.map((b, i) => ({ id: -(i + 1), ...b })),
+    await policyEnv()
+  );
+}
+
 export async function attachPolicyToPlan(planId: number) {
   const rows = await db.select().from(blockItems).where(eq(blockItems.planId, planId));
   const report = evaluatePlanPolicy(
@@ -1193,7 +1308,7 @@ export async function attachPolicyToPlan(planId: number) {
 }
 
 /** `attachPolicyToPlan` plus the plan-level KPI merge, so the stored plan and the DTO agree. */
-async function publishPolicy(planId: number) {
+export async function publishPolicy(planId: number) {
   const report = await attachPolicyToPlan(planId);
   const [row] = await db.select().from(plans).where(eq(plans.id, planId));
   if (row)
@@ -1234,6 +1349,9 @@ export async function getPlanDTO(planId: number): Promise<PlanDTO> {
         mode: b.mode,
         window: b.window,
         delayCostMin: b.delayCostMin,
+        frozen: b.status === "locked",
+        carried: (b.explain as { carried?: boolean } | null)?.carried === true,
+        frozenReason: (b.explain as { frozenReason?: string } | null)?.frozenReason,
       };
     })
     .sort((a, b) => a.day - b.day || a.startMin - b.startMin);

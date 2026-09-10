@@ -50,6 +50,9 @@ export default function PatrolPage() {
 
   // ── "Other" category ──────────────────────────────────────────
   const [customDefect, setCustomDefect] = useState("");
+  // What the patroller saw, not what the system assumes: the seeded queue used to receive every
+  // handset report as "medium" severity, which flattened a rail-head crack into a paint complaint.
+  const [severity, setSeverity] = useState("medium");
   const [customDept, setCustomDept] = useState<"ENG" | "TRD" | "SNT">("ENG");
   const [showCustom, setShowCustom] = useState(false);
 
@@ -183,6 +186,7 @@ export default function PatrolPage() {
           segmentId: target.id,
           department: selectedDept,
           note: note.trim() || `Patroller on-foot report, ${meta?.chainage ?? seg.code}`,
+          severity,
           photoData: base64Data,
           gps: gps,
         }),
@@ -294,6 +298,40 @@ export default function PatrolPage() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Gravity observed */}
+            <div>
+              <label className="block text-[11px] font-semibold text-[#8899AA]">
+                Gravity As Observed
+              </label>
+              <div className="mt-1.5 grid grid-cols-4 gap-1.5">
+                {[
+                  { k: "low", t: "LOW" },
+                  { k: "medium", t: "MED" },
+                  { k: "high", t: "HIGH" },
+                  { k: "critical", t: "CRIT" },
+                ].map((o) => (
+                  <button
+                    key={o.k}
+                    type="button"
+                    onClick={() => setSeverity(o.k)}
+                    className={`rounded-lg border p-1.5 text-center text-[10.5px] font-semibold transition ${
+                      severity === o.k
+                        ? o.k === "critical"
+                          ? "border-rose-500/60 bg-rose-500/15 text-rose-300"
+                          : "border-amber-500/60 bg-amber-500/15 text-amber-300"
+                        : "border-[#2A3A4A] bg-[#0A0E17]/50 text-[#8899AA] hover:text-[#E8EDF5]"
+                    }`}
+                  >
+                    {o.t}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-[9.5px] leading-snug text-faint">
+                Feeds the 72-hour risk model with overdue days + asset health; the planner ranks on
+                that, so tap what you actually see.
+              </p>
             </div>
 
             {/* Custom Defect (shown when "Other" selected) */}
@@ -416,7 +454,7 @@ export default function PatrolPage() {
               ) : (
                 <div className="aspect-[4/3] flex flex-col items-center justify-center bg-[#0A0E17]/20 text-[#8899AA] text-xs">
                   <Camera size={28} className="mb-2 opacity-40" />
-                  <span>Tap "Select Photo" below</span>
+                  <span>Tap &quot;Select Photo&quot; below</span>
                 </div>
               )}
               <div className="flex items-center justify-between bg-[#131A26] px-3 py-1.5 text-[10px] text-[#8899AA]">
@@ -467,7 +505,7 @@ export default function PatrolPage() {
                   Report #{sent} Transmitted
                 </p>
                 <p className="mt-0.5 text-[10.5px] text-[#8899AA]">
-                  Appears in Section Inspector's Pending Validation
+                  Appears in Section Inspector&apos;s Pending Validation
                 </p>
                 <button
                   onClick={resetForm}
@@ -528,7 +566,7 @@ export default function PatrolPage() {
           <ChevronLeft size={14} /> Back to Desk Selection
         </Link>
         <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-[#E8EDF5]">
-          The Track Patroller's Handset
+          The Track Patroller&apos;s Handset
         </h1>
         <p className="mt-3 text-sm leading-relaxed text-[#8899AA]">
           Every gangman and keyman carries Rakshak Patrol. A single photo capture

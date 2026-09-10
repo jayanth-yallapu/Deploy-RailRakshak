@@ -6,6 +6,7 @@ import GanttChart from "@/components/GanttChart";
 import PolicyLedger from "@/components/PolicyLedger";
 import BlockExplain from "@/components/BlockExplain";
 import DefectWhy from "@/components/DefectWhy";
+import ReplanPanel from "@/components/ReplanPanel";
 import { DEPT_COLORS, fmtMin } from "@/lib/engine/network";
 import { getRole } from "@/lib/role";
 import type { DashboardState, DefectDTO, OptimizeResponse, PlanDTO, SafetyOrderDTO } from "@/lib/engine/types";
@@ -309,6 +310,17 @@ export default function PlannerClient({ initial }: { initial: DashboardState }) 
           </div>
         </div>
       </section>
+
+      <ReplanPanel
+        onPublished={() => {
+          // A published re-plan changes the plan in force, the defect statuses and the verdict, so
+          // everything downstream of it is re-read rather than patched locally.
+          void refreshState();
+          void fetch("/api/defects", { cache: "no-store" }).then((r) => r.json()).then((d) => setDefects(d.defects ?? []));
+          setWeek(0);
+          setSelectedBlock(null);
+        }}
+      />
 
       <PolicyLedger
         plan={plan}

@@ -107,6 +107,12 @@ export const plans = pgTable("plans", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   resilienceScore: real("resilience_score").notNull().default(0),
   kpis: jsonb("kpis").$type<Record<string, number>>().notNull(),
+  /** Incremental re-planning: the plan this one replaces, what caused it, and the block-level diff.
+   *  A division never re-issues tomorrow's whole schedule at 02:10, so the delta is part of the plan,
+   *  not a throwaway response — it is what the "notify affected departments" list is built from. */
+  supersedesId: integer("supersedes_id"),
+  triggerNote: text("trigger_note"),
+  diff: jsonb("diff").$type<Record<string, unknown> | null>(),
 });
 
 /** Scheduled maintenance blocks inside a plan. */

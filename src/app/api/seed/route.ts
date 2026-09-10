@@ -7,7 +7,9 @@ export const dynamic = "force-dynamic";
  * Data-lake control for demos and CI.
  *
  *  · `GET /api/seed`  → verify the lake is complete, repairing it if it is not (idempotent).
- *  · `POST /api/seed` `{ force: true }` → rebuild the whole grid + backlog from `network.ts`.
+ *  · `POST /api/seed` `{ force: true }` → wipe and rebuild the whole grid + backlog from `network.ts`:
+*    every plan, block, job, defect and event goes back to exactly what the deterministic generator
+*    produces, including the field reports that tests and demos created since the last rebuild.
  *
  * The forced rebuild matters for both the harness and the booth: running the optimiser marks
  * backlog items `scheduled`, so a second "Generate plan" click on the same lake has less to do.
@@ -33,7 +35,7 @@ export async function POST(req: Request) {
     );
   }
   try {
-    const shape = await seed();
+    const shape = await seed({ force: true });
     return NextResponse.json({ success: true, rebuilt: true, ...shape });
   } catch (error) {
     const message = error instanceof Error ? error.message : "rebuild failed";

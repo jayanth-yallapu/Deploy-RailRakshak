@@ -25,12 +25,15 @@ self-healing, serialised across processes with a Postgres advisory lock).
 
 ### Evidence, not adjectives
 
-Three endpoints exist so the claims on the landing page can be re-derived by anyone in the room:
+Five endpoints exist so the claims on the landing page can be re-derived by anyone in the room:
 
 ```bash
 curl -s -X POST localhost:3000/api/benchmark -H 'content-type: application/json' -d '{"runs":100,"seed":1}'
 curl -s localhost:3000/api/policy | head -c 400
 curl -s "localhost:3000/api/explain?blockItemId=<id-from-/api/state>"
+curl -s -X POST localhost:3000/api/replan -H 'content-type: application/json' -d '{"dryRun":true}'
+curl -s -X POST localhost:3000/api/replan -H 'content-type: application/json' -d '{"mode":"full","dryRun":true}'
+curl -s localhost:3000/api/why?defectId=<id-from-/api/defects>
 ```
 
 - **`/api/benchmark`** runs the *same* `planPool` the product uses against a process model of a
@@ -58,7 +61,25 @@ curl -s "localhost:3000/api/explain?blockItemId=<id-from-/api/state>"
   "rank 32 → 15, still planned, but on D+2 instead of D+3", not an interpolation. Click any row in
   the planner's defect queue.
 
-All four are read-only with respect to a published plan (verify asserts this), and the benchmark
+- **`/api/replan`** is the re-planning half of the promise. `POST` reconciles the plan in force with
+  the live backlog: blocks whose job is `IN_PROGRESS`/`AWAITING_REVIEW` are carried across verbatim and
+  written as `locked` (the drag endpoint answers 409 for them, because the line is under possession);
+  sections the event does not concern are carried through without being re-solved; only the affected
+  sections go back through `planPool`, with a churn term in the objective so that a slot which keeps a
+  notified night wins a tie. It returns the diff — per block: unchanged / moved / added / dropped, the
+  minutes and nights it shifted by, and which departments need a fresh working advice — plus the same
+  rule-book verdict a fresh plan gets. `{dryRun:true}` computes all of that and writes nothing, and
+  `{mode:"full"}` is what "Run Optimizer" does, so the two side by side state what stability costs
+  instead of asserting it. If the live pool already matches the plan, no new version is created.
+  Measured on the seeded grid, over three runs: a critical 02:10 report was absorbed into that
+  section's existing occupation (19–20 of 20 blocks unchanged, no new booking, one block 80 min
+  longer); a second report on a section nobody had notified added exactly 1 block and left the other 20
+  alone; re-cutting the whole week for the same event kept only 80–95 % of the blocks and disturbed up
+  to 4 nights instead of 1 — at the *same* reported delay (389 vs 389 train-minutes), which is the
+  point: the minimal edit is not being paid for with performance, and the panel shows the trade-off
+  rather than the model hiding it.
+
+All five are read-only with respect to a published plan (verify asserts this), and the benchmark
 never writes to `plans`/`block_items`, so running them mid-demo cannot disturb the schedule on screen.
 
 ### Verifying a deployment
@@ -69,14 +90,17 @@ Four gates, all runnable against any URL. These are the checks we re-run after e
 ```bash
 npx tsc --noEmit                        # 0 errors (a schema change that strands a consumer fails here)
 npm run build                           # must succeed with NO network access (fonts are self-hosted)
-node scripts/verify.mjs  http://localhost:3000   # 64 business-invariant checks against live APIs
-node scripts/smoke.mjs   http://localhost:3000   # 19 checks: every page renders its own component
+node scripts/verify.mjs  http://localhost:3000   # 87 business-invariant checks against live APIs
+node scripts/smoke.mjs   http://localhost:3000   # 20 checks: every page renders its own component
                                                  # tree, every endpoint returns shaped data, and the
                                                  # data lake is actually populated
 ```
 
 Reset the demo state at any time (each optimiser run allocates backlog, so a reset keeps a booth
-demo repeatable and makes `verify.mjs` deterministic):
+demo repeatable and makes `verify.mjs` deterministic). A forced reset truncates and rebuilds — plans,
+blocks, jobs, defects and events, including field reports created since — back to exactly what the
+deterministic generator produces (97 backlog items), which is why the harness can assert on the
+numbers that come out of it:
 
 ```bash
 curl -X POST http://localhost:3000/api/seed -H 'content-type: application/json' -d '{"force":true}'

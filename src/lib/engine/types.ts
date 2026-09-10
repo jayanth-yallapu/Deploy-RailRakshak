@@ -85,6 +85,11 @@ export interface BlockItemDTO {
   /** Rule-engine verdict for this block, recomputed whenever the plan is read. */
   policy?: { score: number; violations: string[]; warnings: string[] } | null;
   overrideReason?: string | null;
+  /** Already being executed: copied through a re-plan and refused by the drag endpoint. */
+  frozen?: boolean;
+  /** Copied through unchanged by an incremental re-plan (stable, but still editable by a human). */
+  carried?: boolean;
+  frozenReason?: string;
 }
 
 export interface PlanDTO {

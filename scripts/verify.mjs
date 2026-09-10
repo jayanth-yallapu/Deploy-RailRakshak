@@ -27,6 +27,10 @@ const post = (path, body) =>
 const resetLake = async () => {
   const r = await post("/api/seed", { force: true });
   if (r.rebuilt !== true) throw new Error(`lake reset failed: ${JSON.stringify(r)}`);
+  // A reset that only *reports* success is worse than no reset: the harness would drift a couple of
+  // rows per run and every later number would be quietly about a different lake. The seeded factory
+  // state is 97 backlog items, so anything above that means a previous run's field reports survived.
+  if (r.defects !== 97) throw new Error(`lake reset left ${r.defects} defects — expected the seeded 97`);
   return r;
 };
 
@@ -110,18 +114,31 @@ ok("whatif: failure exposure is a probability (≤100%)", (wi.futureFailureCostA
       else if (src[j] === "}") d--;
       j++;
     } while (d > 0);
-    return [...src.slice(start, j).matchAll(/^\s+([a-zA-Z0-9]+):/gm)].map((m) => m[1]);
+    const body = src.slice(start, j);
+    const named = [...body.matchAll(/^\s+([a-zA-Z0-9]+):/gm)].map((m) => m[1]);
+    const shorthand = [...body.matchAll(/^\s+([a-zA-Z0-9]+),$/gm)].map((m) => m[1]);
+    return [...named, ...shorthand];
   };
   // runOptimizer's literal is the first `const kpis = {` after its declaration
   const runK = keysOf("const kpis = {", "export async function runOptimizer");
   const rollK = keysOf("const kpis = {", "export async function runRollingPlan");
   const emptyK = keysOf("kpis: {", "async function emptyPlan");
-  const union = [...new Set([...runK, ...rollK])];
-  const missing = union.filter((x) => !emptyK.includes(x));
+  // Both planners merge the policy KPIs in afterwards (publishPolicy), so they count as published keys.
+  const mergedK = keysOf("kpis: {", "export async function publishPolicy");
+  const runSet = [...new Set([...runK, ...mergedK])];
+  const rollSet = [...new Set([...rollK, ...mergedK])];
+  // All three producers must publish the SAME key set. Checking only "empty ⊇ planners" let a key
+  // exist in one planner and not another, which is how a dashboard card ends up reading undefined.
+  const all = [...new Set([...runSet, ...rollSet, ...emptyK])];
+  const gaps = all
+    .map((k) => ({ key: k, missingIn: [runSet, rollSet, emptyK].filter((set) => !set.includes(k)).length }))
+    .filter((g) => g.missingIn > 0);
   ok(
-    "kpi contract: the empty-plan shape carries every key the two planners publish",
-    runK.length > 15 && missing.length === 0,
-    missing.length ? `emptyPlan lacks ${missing.join(", ")}` : `${union.length} keys, all zero-filled`
+    "kpi contract: runOptimizer, runRollingPlan and emptyPlan publish the identical KPI key set",
+    runK.length > 15 && gaps.length === 0,
+    gaps.length
+      ? `${gaps.length} gap(s): ${gaps.slice(0, 5).map((g) => `${g.key} (missing in ${g.missingIn})`).join(", ")}`
+      : `${all.length} keys in all three`
   );
 }
 
@@ -160,7 +177,18 @@ ok(
   `${flagged.length} block(s) now flagged`
 );
 const explMoved = await fetch(`${base}/api/explain?blockItemId=${victim.id}`).then(j);
-ok("explain: a hand-edited block says so instead of pretending it still matches the reasoning", explMoved.editedByHuman === true, `placed ${explMoved.generated.chosen.startMin}→${explMoved.now.startMin} min`);
+ok(
+  "explain: a solved block carries the full arithmetic, not a freeze stub",
+  !!explMoved.generated?.chosen && Array.isArray(explMoved.generated.why) && (explMoved.generated.terms?.length ?? 0) > 0,
+  explMoved.generated?.chosen
+    ? `chosen ${explMoved.generated.chosen.startMin}–${explMoved.generated.chosen.endMin}, ${explMoved.generated.terms.length} terms`
+    : `got ${JSON.stringify(explMoved.generated).slice(0, 80)}`
+);
+ok(
+  "explain: a hand-edited block says so instead of pretending it still matches the reasoning",
+  explMoved.editedByHuman === true && explMoved.generated?.chosen?.startMin !== explMoved.now.startMin,
+  `placed ${explMoved.generated?.chosen?.startMin}→${explMoved.now.startMin} min`
+);
 const gateRefused = await fetch(`${base}/api/veto`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -315,6 +343,203 @@ ok(
   "benchmark: read-only against the live plan (it must not touch a published plan)",
   after.latestPlan.blocks.length === before.latestPlan.blocks.length && after.counts.openDefects === before.counts.openDefects,
   `${after.latestPlan.blocks.length} blocks, ${after.counts.openDefects} unscheduled — unchanged`
+);
+
+// ---- Tier 1.5 · incremental re-plan: what happens when the ground changes at 02:10 ----
+await resetLake();
+const rpBase = await post("/api/optimize", { horizon: "WEEKLY" });
+const rpPlanId = rpBase.plan.id;
+const rpBlocks = rpBase.plan.blocks ?? [];
+ok("re-plan: a plan is in force to reconcile against", rpBlocks.length >= 12, `plan #${rpPlanId} · ${rpBlocks.length} notified blocks`);
+
+const rpNoop = await post("/api/replan", {});
+ok(
+  "re-plan: a backlog that already matches the plan creates no new version",
+  rpNoop.replanned === false &&
+    rpNoop.diff.newPlanId === rpPlanId &&
+    rpNoop.diff.stabilityPct === 100 &&
+    rpNoop.diff.added === 0 &&
+    rpNoop.diff.moved === 0,
+  `stability ${rpNoop.diff.stabilityPct}% · still plan #${rpNoop.diff.newPlanId} (re-running it is free)`
+);
+
+// A patroller calls in about a section that already has six-odd defects and a block notified for it.
+const rpSegBlock = rpBlocks.find((b) => !b.frozen);
+const rpReport = await post("/api/jobs/report", {
+  title: "Transverse rail head crack (USFD echo) — verifier 02:10",
+  segmentId: rpSegBlock.segmentId,
+  department: "ENG",
+  severity: "critical",
+  note: "verifier: on-foot report during the notified cycle",
+});
+ok(
+  "patrol report: severity is taken from the handset, duration from the defect taxonomy",
+  rpReport.logged?.severity === "critical" &&
+    rpReport.logged?.severityNum === 10 &&
+    rpReport.logged?.durationMin === 150 &&
+    rpReport.logged?.requiresBlock === true &&
+    !!rpReport.logged?.matchedTaxonomy,
+  `${rpReport.logged?.severity} (${rpReport.logged?.severityNum}/10) · ${rpReport.logged?.durationMin} min · matched "${rpReport.logged?.matchedTaxonomy}"`
+);
+
+const rpInc = await post("/api/replan", { dryRun: true });
+const rpFull = await post("/api/replan", { dryRun: true, mode: "full" });
+const rpChainDry = await fetch(`${base}/api/replan`).then(j);
+ok(
+  "re-plan: a preview computes the diff and writes nothing",
+  rpInc.dryRun === true &&
+    rpInc.replanned === false &&
+    rpChainDry.chain[rpChainDry.chain.length - 1].id === rpPlanId,
+  `chain still ends at #${rpChainDry.chain[rpChainDry.chain.length - 1].id}`
+);
+ok(
+  "re-plan: the minimal edit keeps the notified diagram",
+  rpInc.diff.stabilityPct >= 70 && rpInc.diff.held >= 12,
+  `${rpInc.diff.stabilityPct}% of blocks unchanged · ${rpInc.diff.held} carried through without re-solving`
+);
+ok(
+  "re-plan: one new crack is absorbed into the existing occupation, not answered with a new one",
+  rpInc.diff.added === 0 && rpInc.diff.unchanged >= Math.floor(rpBlocks.length * 0.6),
+  `${rpInc.diff.unchanged} kept · ${rpInc.diff.moved} moved · ${rpInc.diff.dropped} released · shift ${rpInc.diff.shiftMinutes} min`
+);
+ok(
+  "re-plan: the minimal edit is at least as stable as re-cutting the whole week",
+  rpInc.diff.stabilityPct >= rpFull.diff.stabilityPct && rpInc.diff.nightsChanged <= rpFull.diff.nightsChanged,
+  `stability ${rpInc.diff.stabilityPct}% vs ${rpFull.diff.stabilityPct}% · nights disturbed ${rpInc.diff.nightsChanged} vs ${rpFull.diff.nightsChanged}`
+);
+// 5% is the division's stated tolerance for keeping a diagram it has already notified, not a fudge
+// factor: it is what makes "stability is nearly free here" a measured claim instead of an adjective.
+ok(
+  "re-plan: choosing stability costs at most 5% of reported delay",
+  rpInc.metrics.delayTrainMin <= Math.ceil(rpFull.metrics.delayTrainMin * 1.05),
+  `${rpInc.metrics.delayTrainMin} vs ${rpFull.metrics.delayTrainMin} train-min for the same ${rpInc.metrics.blocks}/${rpFull.metrics.blocks} blocks`
+);
+
+const rpPub = await post("/api/replan", { notify: true, triggerNote: "verifier: 02:10 on-foot report" });
+ok(
+  "re-plan: publishing writes a new version that supersedes the plan in force",
+  rpPub.replanned === true && rpPub.diff.previousPlanId === rpPlanId && rpPub.metrics.planId > rpPlanId && rpPub.diff.mode === "incremental",
+  `#${rpPlanId} → #${rpPub.metrics.planId} · ${rpPub.diff.unchanged}/${rpBlocks.length} blocks unchanged`
+);
+const rpStored = await fetch(`${base}/api/policy`).then(j);
+ok(
+  "re-plan: no hard rule is traded away for stability, and the stored verdict matches the panel",
+  rpPub.metrics.hardViolations === 0 && (rpStored.hardViolations ?? -1) === 0 && rpStored.score === rpPub.metrics.policyScore,
+  `ledger says ${rpStored.score}/${rpStored.hardViolations} hard · panel said ${rpPub.metrics.policyScore}/${rpPub.metrics.hardViolations} · ${rpPub.log.find((l) => l.includes("advisory"))?.match(/· \d+ advisory/)?.[0] ?? "0 advisory"}`
+);
+ok(
+  "re-plan: work that could not be absorbed is announced, never swallowed",
+  (rpPub.diff.escalation === null) === (rpPub.metrics.deferredItems === 0),
+  `deferred ${rpPub.metrics.deferredItems} · escalation ${rpPub.diff.escalation ? "raised" : "not needed"}`
+);
+const quietDepts = new Set(rpPub.notified.map((n) => n.department));
+ok(
+  "re-plan: a re-plan that changed nothing notifies no one",
+  rpPub.diff.blocks.every((b) => b.kind === "unchanged")
+    ? rpPub.notified.length === 0
+    : rpPub.notified.length > 0 && rpPub.notified.every((n) => n.blocks.length > 0),
+  `${rpPub.notified.length} working advice(s) for ${rpPub.diff.moved + rpPub.diff.added + rpPub.diff.dropped} change(s)`
+);
+const rpCrackRow = (rpPub.diff.blocks ?? []).find((b) => b.segmentId === rpSegBlock.segmentId);
+ok(
+  "re-plan: the reported crack is inside a block of the new plan, not left in the queue",
+  (rpCrackRow?.defectIds ?? []).includes(rpReport.defectId),
+  `${rpCrackRow?.code} · ${rpCrackRow?.defectIds.length ?? 0} item(s) in ${rpCrackRow?.note ?? "the block"} · ${when0(rpCrackRow)}`
+);
+function when0(b) {
+  if (!b?.to) return "no slot";
+  const p = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  return `${p(b.to.startMin)}–${p(b.to.endMin)}`;
+}
+
+// Now make the safety case: crews sign on to the block that holds the crack, and a second report
+// arrives on a section that has no notified block at all. The first must not move; the second must
+// add a block. Both halves of "minimal edit" in one call.
+await post("/api/jobs/start", { jobId: rpReport.id });
+const rpBefore = await fetch(`${base}/api/state`).then(j);
+const rpBeforeBlocks = rpBefore.latestPlan?.blocks ?? [];
+const covered = new Set(rpBeforeBlocks.map((b) => b.segmentId));
+const uncoveredSeg = (rpBefore.segments ?? []).find((x) => !covered.has(x.id) && (x.defects ?? 0) >= 0);
+const rpReport2 = await post("/api/jobs/report", {
+  title: "OHE contact-wire height below 5.90 m — verifier 02:40",
+  segmentId: uncoveredSeg.id,
+  department: "TRD",
+  severity: "critical",
+  note: "verifier: second report, on a section with no notified block",
+});
+const rpPub2 = await post("/api/replan", { notify: true, triggerNote: "verifier: re-plan while a gang is on the line" });
+ok(
+  "re-plan: work on a section with no notified block adds exactly one block, disturbing nothing else",
+  rpPub2.replanned === true && rpPub2.diff.added === 1 && rpPub2.diff.unchanged >= rpBeforeBlocks.length - 1,
+  `defect #${rpReport2.defectId} → ${rpPub2.diff.added} block added on ${rpPub2.diff.affectedSections.join(",")} · ${rpPub2.diff.unchanged}/${rpBeforeBlocks.length} kept · ${rpPub2.diff.moved} moved`
+);
+const rpAfter = await fetch(`${base}/api/state`).then(j);
+const changedDepts = new Set(rpPub2.diff.blocks.filter((b) => b.kind !== "unchanged").flatMap((b) => b.departments));
+const notifiedDepts = new Set(rpPub2.notified.map((n) => n.department));
+ok(
+  "re-plan: working advice goes to exactly the departments whose blocks changed, with the slot quoted",
+  rpPub2.notified.every((n) => n.department && n.blocks.length > 0) &&
+    [...changedDepts].every((d) => notifiedDepts.has(d)) &&
+    [...notifiedDepts].every((d) => changedDepts.has(d)) &&
+    rpPub2.notified.flatMap((n) => n.blocks).every((line) => /\d\d:\d\d/.test(line)),
+  `${[...notifiedDepts].join(", ") || "none"} ← ${[...changedDepts].join(",")} changed · ${rpPub2.notified.flatMap((n) => n.blocks)[0] ?? ""}`
+);
+const heldBlocks = (rpAfter.latestPlan?.blocks ?? []).filter((b) => b.frozen);
+ok(
+  "re-plan: a block with crews signed on is carried across with identical geometry",
+  heldBlocks.length >= 1 &&
+    heldBlocks.every((b) => {
+      const o = rpBeforeBlocks.find((x) => x.segmentId === b.segmentId);
+      return o && o.day === b.day && o.startMin === b.startMin && o.endMin === b.endMin;
+    }),
+  `${heldBlocks.length} held · ${rpPub2.diff.moved} moved · ${rpPub2.diff.dropped} released`
+);
+ok(
+  "re-plan: a held block says why it cannot move",
+  heldBlocks.every((b) => /crew|signed|possession/i.test(b.frozenReason ?? "")),
+  heldBlocks.map((b) => `${b.segmentCode}: ${b.frozenReason}`).join(" | ")
+);
+const rpDrag = await fetch(`${base}/api/blocks`, {
+  method: "PATCH",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ id: heldBlocks[0]?.id ?? -1, startMin: 540, endMin: 660 }),
+}).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+ok(
+  "re-plan: the drag endpoint refuses to move a block whose line is under possession",
+  rpDrag.status === 409 && /locked/i.test(rpDrag.body.error ?? ""),
+  `HTTP ${rpDrag.status} · ${rpDrag.body.error ?? ""}`
+);
+const rpNoop2 = await post("/api/replan", {});
+ok(
+  "re-plan: once reconciled, reconciling again is a no-op",
+  rpNoop2.replanned === false && rpNoop2.diff.stabilityPct === 100,
+  rpNoop2.log[0]
+);
+const rpChain = await fetch(`${base}/api/replan`).then(j);
+const rpChainLast = rpChain.chain?.[rpChain.chain.length - 1] ?? {};
+ok(
+  "re-plan: the version chain and its stored diff survive a reload",
+  rpChain.chain.length >= 3 &&
+    rpChainLast.id === rpPub2.metrics.planId &&
+    rpChain.diff?.newPlanId === rpPub2.metrics.planId &&
+    rpChainLast.supersedesId === rpPub.metrics.planId &&
+    rpChainLast.stabilityPct === rpPub2.diff.stabilityPct,
+  (rpChain.chain ?? []).map((c) => `#${c.id}${c.stabilityPct != null ? `(${c.stabilityPct}%)` : ""}`).join(" → ")
+);
+const rpGet = await fetch(`${base}/api/state`).then(j);
+ok(
+  "re-plan: /api/state serves the new plan, not the superseded one",
+  rpGet.latestPlan.id === rpPub2.metrics.planId && rpGet.latestPlan.blocks.length === rpPub2.metrics.blocks,
+  `#${rpGet.latestPlan.id} · ${rpGet.latestPlan.blocks.length} blocks`
+);
+
+// Leave the lake as a demo audience would expect to find it.
+const rpReset = await resetLake();
+const rpClean = await fetch(`${base}/api/state`).then(j);
+ok(
+  "re-plan: the verifier restores the seeded baseline afterwards",
+  rpReset.rebuilt === true && (rpClean.counts?.openDefects ?? 0) > 15 && (rpClean.latestPlan?.blocks.length ?? 0) >= 12,
+  `${rpClean.counts.openDefects} unscheduled · ${rpClean.latestPlan.blocks.length} blocks in the opening plan`
 );
 
 // ---- contracts ----
