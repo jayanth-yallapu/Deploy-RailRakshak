@@ -19,13 +19,29 @@ npx drizzle-kit push        # create tables
 npm run build && npm start  # or: npm run dev
 ```
 
-Open `http://localhost:3000` → sign in via `/login` (4 demo roles). The Delhi-NCR grid,
-defects, trains and workflow jobs **auto-seed on first request** (idempotent).
+Open `http://localhost:3000` → sign in via `/login` (4 demo roles). The Delhi-NCR grid, assets,
+defect backlog, workflow jobs and an opening block plan **auto-seed on first request** (idempotent,
+self-healing, serialised across processes with a Postgres advisory lock).
 
-Verify a running deployment end-to-end:
+### Verifying a deployment
+
+Four gates, all runnable against any URL. These are the checks we re-run after every change —
+"the build passes" is not one of them, it is the *minimum*:
 
 ```bash
-node scripts/verify.mjs http://localhost:3000   # 15 invariant checks against live APIs
+npx tsc --noEmit                        # 0 errors (a schema change that strands a consumer fails here)
+npm run build                           # must succeed with NO network access (fonts are self-hosted)
+node scripts/verify.mjs  http://localhost:3000   # 30 business-invariant checks against live APIs
+node scripts/smoke.mjs   http://localhost:3000   # 18 checks: every page renders its own component
+                                                 # tree, every endpoint returns shaped data, and the
+                                                 # data lake is actually populated
+```
+
+Reset the demo state at any time (each optimiser run allocates backlog, so a reset keeps a booth
+demo repeatable and makes `verify.mjs` deterministic):
+
+```bash
+curl -X POST http://localhost:3000/api/seed -H 'content-type: application/json' -d '{"force":true}'
 ```
 
 ## Roles & pages
@@ -70,8 +86,18 @@ the real Yamuna course, and 24 real trains (12951/52 Mumbai Rajdhani, 12301/02 H
 
 - Trained statistical model for 72-h failure probability — not a hardcoded lookup; the
   logistic-regression weights are fitted at runtime with gradient descent and reported
-  with computed holdout accuracy. (It trains on synthetic-but-principled labeled data,
-  since real IR failure logs aren't public — stated honestly on the model card.)
+  with computed holdout accuracy. **The model drives the plan**: every backlog item is scored with
+  `predictRisk()` using its own overdue age and linked asset health (it previously drove only the
+  what-if lab while a hand-written formula ranked the queue — see `FEATURE_ROADMAP.md` §0.1).
+  It trains on synthetic-but-principled labeled data, since real IR failure logs aren't public —
+  stated honestly on the model card.
+- Every headline number is computed at run time. `↓34% block downtime`, `12.1 → 5.0 min/train`
+  and `15 occupancy conflicts eliminated` come from `POST /api/optimize` on the seeded grid and are
+  asserted by `verify.mjs`; the constants that used to stand in for them (`reductionPct: 38`,
+  `baselineAvgDelay = 27 + rng()*9`, fabricated `state.ts` fallbacks) were removed.
+- The manual process we compare against is a **modelled** sequential-silo baseline (each department
+  books its own block, own setup time, conventional mid-window start, no bundling) — deterministic
+  and documented, not a claim about real BDMS logs. Labelled that way in the UI.
 - Exact constraint-based solver pass over the window-placement subproblem (exhaustive
   objective evaluation with hard constraints). We deliberately did **not** bind OR-Tools/
   CP-SAT: its native binaries are fragile on demo machines, and the exact search over
@@ -88,6 +114,8 @@ the real Yamuna course, and 24 real trains (12951/52 Mumbai Rajdhani, 12301/02 H
 
 **Simulated by design (demo datasets, swappable transports)**
 
+- Maintenance **ages/overdue days** are generated from each asset's inspection cycle in the seeded
+  lake. The derivation is real (`age − cycle`), the dataset is synthetic.
 - External feeds (TMS/TDMS/SMMS/COA/FOIS/IMD) are served from the seeded data lake via
   documented contracts (`src/lib/integrations/contracts.ts`) — `GET /api/ingest?system=TMS`
   executes a contract-shaped ingestion cycle. Point the adapters at real endpoints to go live.
@@ -108,10 +136,19 @@ the real Yamuna course, and 24 real trains (12951/52 Mumbai Rajdhani, 12301/02 H
 
 ## API map (selected)
 
-`GET /api/state` · `GET /api/defects` · `GET /api/jobs` · `POST /api/optimize {horizon: ROLLING|WEEKLY|MONTHLY}`
+`GET /api/state` · `GET /api/defects` → `{defects, count}` · `GET /api/jobs` → `{jobs, count}` ·
+`POST /api/seed {force:true}` (rebuild demo lake) ·
+`POST /api/optimize {horizon: ROLLING|WEEKLY|MONTHLY}`
 · `POST /api/whatif` · `POST /api/consensus` · `POST /api/safety-order` · `POST /api/crisis`
 · `POST /api/jobs/{report,allot,start,complete,review,extend}` · `PATCH /api/blocks` (drag-resize)
 · `POST /api/mode` (fog/VIP/DTP) · `POST /api/veto` · `GET /api/ingest?system=…`
+
+## Front-end notes
+
+- Fonts are **self-hosted** (`public/fonts`, `@font-face` in `globals.css`) rather than pulled via
+  `next/font/google`, which downloads at build time and therefore fails outright on a machine with
+  no internet — i.e. exactly what a conference laptop does to you. Devanagari is included so the
+  Hindi mode renders in a real Devanagari face instead of whatever the OS supplies.
 
 ## Performance & reliability notes
 
@@ -122,7 +159,10 @@ the real Yamuna course, and 24 real trains (12951/52 Mumbai Rajdhani, 12301/02 H
 
 ## Report structure
 
-- `src/db/schema.ts` — stations, sections, assets, defects, plans, block items, jobs, events, settings
+- `src/db/schema.ts` — stations, sections, assets (+maintenance cycle), defects (+overdue days,
+  duration, inspection mode, block requirement, asset link), plans, block items, jobs, events, settings
+- `src/lib/engine/severity.ts` — the single severity label↔number mapping (three private copies used
+  to disagree, which is how one API returned 0–100 and a table cell multiplied it by 100 again)
 - `src/lib/engine/` — ml, optimizer, simulate, livetrains, jobs, state, seed, network, types
 - `src/components/` — map, feeds, boards, modals, role dashboards
 - `scripts/verify.mjs` — executable invariant checks (run against any deployed URL)
